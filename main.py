@@ -24,22 +24,18 @@ from models.model_video_3 import start_pixverse_generation, setup_pixverse_handl
 # ✅ Импортируем генераторы картинок
 from models.model_image_1 import start_image_generation_1, setup_imagegen1_handlers
 from models.model_image_2 import setup_imagegen2_handlers
-#from models.model_image_3 import start_image_generation_3
+# from models.model_image_3 import start_image_generation_3
 
-# --- Регистрация обработчиков видео
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+router = Router()
+
+# --- Регистрация обработчиков видео и картинок (твой код) ---
 setup_video_handlers(dp)
 setup_veo3_handlers(dp)
 setup_pixverse_handlers(dp)
 setup_imagegen1_handlers(dp)
 setup_imagegen2_handlers(dp)
-
-
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
-router = Router()
 
 class GenerationStates(StatesGroup):
     waiting_for_image_params = State()
@@ -93,7 +89,7 @@ async def main_menu(message: Message):
 
 async def cmd_balance(message: Message):
     user = await get_or_create_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"Ваш текущий баланс: {user.balance} руб. Одна генерация стоит 150 руб.", reply_markup=balance_keyboard())
+    await message.answer(f"Ваш текущий баланс: {user.balance} руб. Одна генерация стоит {PRICE_PER_GENERATION} руб.", reply_markup=balance_keyboard())
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_main_menu(callback: CallbackQuery):
@@ -114,13 +110,6 @@ async def generate_menu(message: Message):
     ])
     await message.answer("Выберите тип генерации:", reply_markup=kb)
 
-async def check_balance_and_proceed(callback: CallbackQuery, state: FSMContext, keyboard: InlineKeyboardMarkup, message_text: str):
-    user = await get_or_create_user(callback.from_user.id, callback.from_user.username)
-    if user.balance < PRICE_PER_GENERATION and not ALLOW_GENERATION_WHEN_ZERO:
-        await callback.message.answer(f"{NO_GENERATION_MESSAGE}\n\nДля пополнения нажмите:", reply_markup=balance_keyboard())
-    else:
-        await callback.message.edit_text(message_text, reply_markup=keyboard)
-    await callback.answer()
 
 @router.callback_query(F.data == "generate_images")
 async def image_models_menu(callback: CallbackQuery, state: FSMContext):
@@ -128,7 +117,8 @@ async def image_models_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="Flux (img)", callback_data="img_model_1")],
         [InlineKeyboardButton(text="Flux Pro", callback_data="img_model_2")]
     ])
-    await check_balance_and_proceed(callback, state, kb, "Выберите модель генерации изображений:")
+    await callback.message.answer("Выберите модель генерации изображений:", reply_markup=kb)
+    await callback.answer()
 
 @router.callback_query(F.data == "generate_videos")
 async def video_models_menu(callback: CallbackQuery, state: FSMContext):
@@ -136,7 +126,8 @@ async def video_models_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="Kling", callback_data="vid_model_1")],
         [InlineKeyboardButton(text="Veo 3", callback_data="vid_model_2")]
     ])
-    await check_balance_and_proceed(callback, state, kb, "Выберите модель генерации видео:")
+    await callback.message.answer("Выберите модель генерации видео:", reply_markup=kb)
+    await callback.answer()
 
 @router.callback_query(F.data == "generate_3d")
 async def gen_3d_menu(callback: CallbackQuery, state: FSMContext):
@@ -144,7 +135,8 @@ async def gen_3d_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="3D A", callback_data="3d_model_1")],
         [InlineKeyboardButton(text="3D B", callback_data="3d_model_2")]
     ])
-    await check_balance_and_proceed(callback, state, kb, "Выберите модель генерации 3D:")
+    await callback.message.answer("Выберите модель генерации 3D:", reply_markup=kb)
+    await callback.answer()
 
 @router.callback_query(F.data == "generate_audio")
 async def gen_audio_menu(callback: CallbackQuery, state: FSMContext):
@@ -152,8 +144,8 @@ async def gen_audio_menu(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="Audio A", callback_data="audio_model_1")],
         [InlineKeyboardButton(text="Audio B", callback_data="audio_model_2")]
     ])
-    await check_balance_and_proceed(callback, state, kb, "Выберите модель генерации аудио:")
-
+    await callback.message.answer("Выберите модель генерации аудио:", reply_markup=kb)
+    await callback.answer()
 
 
 async def process_generation_params(message: Message, state: FSMContext):
@@ -192,6 +184,7 @@ async def process_generation_params(message: Message, state: FSMContext):
     await message.answer(result)
     await state.clear()
 
+
 @router.message(GenerationStates.waiting_for_image_params)
 @router.message(GenerationStates.waiting_for_video_params)
 @router.message(GenerationStates.waiting_for_audio_params)
@@ -206,6 +199,110 @@ async def on_generate_command(message: Message):
 @router.message(F.text == "📊 Баланс")
 async def on_balance_command(message: Message):
     await cmd_balance(message)
+
+
+async def check_balance_and_proceed_model(callback: CallbackQuery, state: FSMContext) -> bool:
+    user = await get_or_create_user(callback.from_user.id, callback.from_user.username)
+    if user.balance < PRICE_PER_GENERATION and not ALLOW_GENERATION_WHEN_ZERO:
+        await callback.message.answer(
+            f"{NO_GENERATION_MESSAGE}\n\nДля пополнения нажмите:",
+            reply_markup=balance_keyboard()
+        )
+        await callback.answer()
+        await state.clear()
+        return False
+    return True
+
+
+# --- Обработчики выбора моделей с проверкой баланса и установкой состояний ---
+
+# Видео модели
+@router.callback_query(F.data == "vid_model_1")
+async def handle_video_model_1(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="kling")
+    await callback.message.answer("Выбрана модель Kling. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_video_params)
+    await callback.answer()
+
+@router.callback_query(F.data == "vid_model_2")
+async def handle_video_model_2(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="veo3")
+    await callback.message.answer("Выбрана модель Veo 3. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_video_params)
+    await callback.answer()
+
+
+# 3D модели
+@router.callback_query(F.data == "3d_model_1")
+async def handle_3d_model_1(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="3d_a")
+    await callback.message.answer("Выбрана 3D модель 3D A. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_3d_params)
+    await callback.answer()
+
+@router.callback_query(F.data == "3d_model_2")
+async def handle_3d_model_2(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="3d_b")
+    await callback.message.answer("Выбрана 3D модель 3D B. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_3d_params)
+    await callback.answer()
+
+
+# Аудио модели
+@router.callback_query(F.data == "audio_model_1")
+async def handle_audio_model_1(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="audio_a")
+    await callback.message.answer("Выбрана аудио модель Audio A. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_audio_params)
+    await callback.answer()
+
+@router.callback_query(F.data == "audio_model_2")
+async def handle_audio_model_2(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="audio_b")
+    await callback.message.answer("Выбрана аудио модель Audio B. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_audio_params)
+    await callback.answer()
+
+
+# Картинки модели
+@router.callback_query(F.data == "img_model_1")
+async def handle_img_model_1(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="flux_img")
+    await callback.message.answer("Выбрана модель Flux (img). Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_image_params)
+    await callback.answer()
+
+@router.callback_query(F.data == "img_model_2")
+async def handle_img_model_2(callback: CallbackQuery, state: FSMContext):
+    if not await check_balance_and_proceed_model(callback, state):
+        return
+    await state.clear()
+    await state.update_data(model="flux_pro")
+    await callback.message.answer("Выбрана модель Flux Pro. Введите параметры...")
+    await state.set_state(GenerationStates.waiting_for_image_params)
+    await callback.answer()
+
 
 @router.callback_query()
 async def fallback_callback(callback: CallbackQuery):
@@ -226,16 +323,6 @@ def register_handlers(dp: Dispatcher):
         dp._router_included = True
 
 async def main():
-    print("Запуск бота...")
-    if not BOT_TOKEN:
-        print("Ошибка: BOT_TOKEN не найден")
-        return
-    bot = Bot(token=BOT_TOKEN)
-    register_handlers(dp)
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-async def main():
     init_db()
     print("База и таблицы готовы")
     if not BOT_TOKEN:
@@ -247,4 +334,6 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    load_dotenv()
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
     asyncio.run(main())
