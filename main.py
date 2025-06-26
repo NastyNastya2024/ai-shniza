@@ -1,82 +1,35 @@
+# main.py
 import asyncio
 import os
+
 from dotenv import load_dotenv
-
-from aiogram import Bot, Dispatcher, F, Router, types
-from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton
-)
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
+from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Message
+from aiogram.filters import Command
 
-from sqlalchemy.orm import Session
+from database import init_db
+from balance import balance_router
+from generation import generation_router
 
-from database import init_db, SessionLocal, User
-from bot.config import PRICE_PER_GENERATION, PAYMENT_LINK, ALLOW_GENERATION_WHEN_ZERO, NO_GENERATION_MESSAGE
 
-from models.model_video_1 import start_video_generation, setup_video_handlers
-from models.model_video_2 import setup_veo3_handlers
-from models.model_video_3 import start_pixverse_generation, setup_pixverse_handlers
-
-# ✅ Импортируем генераторы картинок
-from models.model_image_1 import start_image_generation_1, setup_imagegen1_handlers
-from models.model_image_2 import setup_imagegen2_handlers
-# from models.model_image_3 import start_image_generation_3
-
+# Инициализация хранилища состояний
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
-router = Router()
 
-# --- Регистрация обработчиков видео и картинок (твой код) ---
-setup_video_handlers(dp)
-setup_veo3_handlers(dp)
-setup_pixverse_handlers(dp)
-setup_imagegen1_handlers(dp)
-setup_imagegen2_handlers(dp)
 
-class GenerationStates(StatesGroup):
-    waiting_for_image_params = State()
-    waiting_for_video_params = State()
-    waiting_for_audio_params = State()
-    waiting_for_3d_params = State()
-
+# Главное меню
 def start_menu_keyboard():
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🎨 Генерация")],
         [KeyboardButton(text="📊 Баланс")]
     ], resize_keyboard=True)
 
-def balance_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="topup")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-    ])
 
-def payment_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Пополнить баланс", url=PAYMENT_LINK)],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-    ])
-
-async def get_or_create_user(user_id: int, username: str):
-    db = SessionLocal()
-    user = db.query(User).filter(User.telegram_id == user_id).first()
-    if not user:
-        user = User(
-            telegram_id=user_id,
-            username=username,
-            balance=0  # баланс в рублях
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    db.close()
-    return user
-
+# Команда /start
 async def cmd_start(message: Message):
+    from balance import get_or_create_user
     user = await get_or_create_user(message.from_user.id, message.from_user.username)
     await message.answer("✅ Старт принят!")
     await message.answer(
@@ -84,256 +37,41 @@ async def cmd_start(message: Message):
         reply_markup=start_menu_keyboard()
     )
 
+
+# Обработчик "Главное меню"
 async def main_menu(message: Message):
     await message.answer("Главное меню:", reply_markup=start_menu_keyboard())
 
-async def cmd_balance(message: Message):
-    user = await get_or_create_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"Ваш текущий баланс: {user.balance} руб. Одна генерация стоит {PRICE_PER_GENERATION} руб.", reply_markup=balance_keyboard())
 
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_main_menu(callback: CallbackQuery):
-    await callback.message.answer("Вы вернулись в главное меню", reply_markup=start_menu_keyboard())
-    await callback.answer()
-
-@router.callback_query(F.data == "topup")
-async def handle_topup(callback: CallbackQuery):
-    await callback.message.answer("Пополните баланс любым удобным способом:", reply_markup=payment_keyboard())
-    await callback.answer()
-
-async def generate_menu(message: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Генерация изображения", callback_data="generate_images")],
-        [InlineKeyboardButton(text="Генерация видео", callback_data="generate_videos")],
-        [InlineKeyboardButton(text="Генерация 3D", callback_data="generate_3d")],
-        [InlineKeyboardButton(text="Генерация аудио", callback_data="generate_audio")],
-    ])
-    await message.answer("Выберите тип генерации:", reply_markup=kb)
-
-
-@router.callback_query(F.data == "generate_images")
-async def image_models_menu(callback: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Flux (img)", callback_data="img_model_1")],
-        [InlineKeyboardButton(text="Flux Pro", callback_data="img_model_2")]
-    ])
-    await callback.message.answer("Выберите модель генерации изображений:", reply_markup=kb)
-    await callback.answer()
-
-@router.callback_query(F.data == "generate_videos")
-async def video_models_menu(callback: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Kling", callback_data="vid_model_1")],
-        [InlineKeyboardButton(text="Veo 3", callback_data="vid_model_2")]
-    ])
-    await callback.message.answer("Выберите модель генерации видео:", reply_markup=kb)
-    await callback.answer()
-
-@router.callback_query(F.data == "generate_3d")
-async def gen_3d_menu(callback: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="3D A", callback_data="3d_model_1")],
-        [InlineKeyboardButton(text="3D B", callback_data="3d_model_2")]
-    ])
-    await callback.message.answer("Выберите модель генерации 3D:", reply_markup=kb)
-    await callback.answer()
-
-@router.callback_query(F.data == "generate_audio")
-async def gen_audio_menu(callback: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Audio A", callback_data="audio_model_1")],
-        [InlineKeyboardButton(text="Audio B", callback_data="audio_model_2")]
-    ])
-    await callback.message.answer("Выберите модель генерации аудио:", reply_markup=kb)
-    await callback.answer()
-
-
-async def process_generation_params(message: Message, state: FSMContext):
-    state_data = await state.get_data()
-    current_state = await state.get_state()
-    user = await get_or_create_user(message.from_user.id, message.from_user.username)
-
-    if not current_state or "model" not in state_data:
-        await message.answer("Пожалуйста, выберите модель генерации из меню.")
-        return
-
-    if user.balance < PRICE_PER_GENERATION and not ALLOW_GENERATION_WHEN_ZERO:
-        await message.answer(f"{NO_GENERATION_MESSAGE}\n\nДля пополнения нажмите:", reply_markup=balance_keyboard())
-        await state.clear()
-        return
-
-    db = SessionLocal()
-    user_db = db.query(User).filter(User.telegram_id == message.from_user.id).first()
-    if user_db.balance >= PRICE_PER_GENERATION:
-        user_db.balance -= PRICE_PER_GENERATION
-        db.commit()
-    else:
-        await message.answer(f"{NO_GENERATION_MESSAGE}\n\nДля пополнения нажмите:", reply_markup=balance_keyboard())
-        await state.clear()
-        db.close()
-        return
-    db.close()
-
-    model_name = state_data["model"]
-    prompt = message.text
-
-    await message.answer("Генерация запущена, подождите результат...")
-
-    # Здесь должна быть логика генерации — заглушка:
-    result = f"Заглушка генерации для {model_name} по описанию: {prompt}"
-    await message.answer(result)
-    await state.clear()
-
-
-@router.message(GenerationStates.waiting_for_image_params)
-@router.message(GenerationStates.waiting_for_video_params)
-@router.message(GenerationStates.waiting_for_audio_params)
-@router.message(GenerationStates.waiting_for_3d_params)
-async def handle_generation_message(message: Message, state: FSMContext):
-    await process_generation_params(message, state)
-
-@router.message(F.text == "🎨 Генерация")
-async def on_generate_command(message: Message):
-    await generate_menu(message)
-
-@router.message(F.text == "📊 Баланс")
-async def on_balance_command(message: Message):
-    await cmd_balance(message)
-
-
-async def check_balance_and_proceed_model(callback: CallbackQuery, state: FSMContext) -> bool:
-    user = await get_or_create_user(callback.from_user.id, callback.from_user.username)
-    if user.balance < PRICE_PER_GENERATION and not ALLOW_GENERATION_WHEN_ZERO:
-        await callback.message.answer(
-            f"{NO_GENERATION_MESSAGE}\n\nДля пополнения нажмите:",
-            reply_markup=balance_keyboard()
-        )
-        await callback.answer()
-        await state.clear()
-        return False
-    return True
-
-
-# --- Обработчики выбора моделей с проверкой баланса и установкой состояний ---
-
-# Видео модели
-@router.callback_query(F.data == "vid_model_1")
-async def handle_video_model_1(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="kling")
-    await callback.message.answer("Выбрана модель Kling. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_video_params)
-    await callback.answer()
-
-@router.callback_query(F.data == "vid_model_2")
-async def handle_video_model_2(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="veo3")
-    await callback.message.answer("Выбрана модель Veo 3. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_video_params)
-    await callback.answer()
-
-
-# 3D модели
-@router.callback_query(F.data == "3d_model_1")
-async def handle_3d_model_1(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="3d_a")
-    await callback.message.answer("Выбрана 3D модель 3D A. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_3d_params)
-    await callback.answer()
-
-@router.callback_query(F.data == "3d_model_2")
-async def handle_3d_model_2(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="3d_b")
-    await callback.message.answer("Выбрана 3D модель 3D B. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_3d_params)
-    await callback.answer()
-
-
-# Аудио модели
-@router.callback_query(F.data == "audio_model_1")
-async def handle_audio_model_1(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="audio_a")
-    await callback.message.answer("Выбрана аудио модель Audio A. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_audio_params)
-    await callback.answer()
-
-@router.callback_query(F.data == "audio_model_2")
-async def handle_audio_model_2(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="audio_b")
-    await callback.message.answer("Выбрана аудио модель Audio B. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_audio_params)
-    await callback.answer()
-
-
-# Картинки модели
-@router.callback_query(F.data == "img_model_1")
-async def handle_img_model_1(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="flux_img")
-    await callback.message.answer("Выбрана модель Flux (img). Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_image_params)
-    await callback.answer()
-
-@router.callback_query(F.data == "img_model_2")
-async def handle_img_model_2(callback: CallbackQuery, state: FSMContext):
-    if not await check_balance_and_proceed_model(callback, state):
-        return
-    await state.clear()
-    await state.update_data(model="flux_pro")
-    await callback.message.answer("Выбрана модель Flux Pro. Введите параметры...")
-    await state.set_state(GenerationStates.waiting_for_image_params)
-    await callback.answer()
-
-
-@router.callback_query()
-async def fallback_callback(callback: CallbackQuery):
-    print(f"⚠️ Необработанный callback: {callback.data}")
-    await callback.answer()
-
-@router.message()
-async def fallback_message(message: Message):
-    print(f"⚠️ Необработанное сообщение: {message.text}")
-
+# Регистрация всех хендлеров
 def register_handlers(dp: Dispatcher):
-    dp.message.register(cmd_start, Command(commands=["start"]))
-    dp.message.register(on_generate_command, F.text == "🎨 Генерация")
-    dp.message.register(on_balance_command, F.text == "📊 Баланс")
-    dp.message.register(main_menu, F.text == "Главное меню")
-    if not hasattr(dp, "_router_included"):
-        dp.include_router(router)
-        dp._router_included = True
+    dp.include_router(balance_router)
+    dp.include_router(generation_router)
+    dp.message.register(cmd_start, Command("start"))
+    dp.message.register(main_menu, lambda m: m.text == "Главное меню")
 
+
+# Основная точка входа
 async def main():
-    init_db()
-    print("База и таблицы готовы")
-    if not BOT_TOKEN:
-        print("Ошибка: BOT_TOKEN не найден")
-        return
-    bot = Bot(token=BOT_TOKEN)
-    register_handlers(dp)
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
     load_dotenv()
     BOT_TOKEN = os.getenv("BOT_TOKEN")
+    if not BOT_TOKEN:
+        print("❌ BOT_TOKEN не найден в .env")
+        return
+
+    init_db()
+    print("✅ База данных готова")
+
+    bot = Bot(token=BOT_TOKEN)
+    register_handlers(dp)
+
+    # Удаление webhook (если вдруг был установлен)
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    # Запуск long polling
+    print("🤖 Бот запущен через polling")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
     asyncio.run(main())
