@@ -33,8 +33,12 @@ class VideoGenState(StatesGroup):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 Привет! Отправь описание сцены на английском для генерации видео.\n"
-        "Минимум 15 символов."
+        " Модель Veo3 генерирует видео с звуком по описанию.\n"
+        "💡 Описание (prompt) — на английском.\n"
+        "🛠️ Разрешение видео 16:9 .\n"
+        "🛠️ Звук соответствует описанию.\n"
+        "💲 Себестоимость: 6$ (комиссия отсутствует).\n"
+        "Отправьте описание сцены."
     )
     await state.set_state(VideoGenState.waiting_for_prompt)
 
@@ -42,7 +46,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def handle_prompt(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 15:
-        await message.answer("❌ Слишком короткое описание, минимум 15 символов. Попробуй еще раз:")
+        await message.answer("❌ Описание слишком короткое, минимум 15 символов. Попробуйте еще раз:")
         return
 
     await message.answer("🎬 Генерируем видео, это может занять некоторое время...")
@@ -53,7 +57,7 @@ async def handle_prompt(message: Message, state: FSMContext):
             input={
                 "prompt": prompt,
                 "enhance_prompt": True,
-                "aspect_ratio": "16:9"
+                "aspect_ratio": "16:9"  # дефолтное разрешение 16:9
             }
         )
         # Получаем URL видео из объекта output

@@ -1,2 +1,2 @@
 from .models import User
-from .db import SessionLocal, init_db
+from .db import async_session, init_db

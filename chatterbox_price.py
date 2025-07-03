@@ -14,6 +14,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
+from bot.payments import has_enough_balance, deduct_balance
+from bot.config import PRICE_CHATTERBOX
+
 # Загрузка переменных окружения
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -29,7 +32,7 @@ class VoiceGenState(StatesGroup):
     CHOOSE_SEED = State()
     AWAITING_TEXT = State()
 
-# Кнопки выбора temperature
+# Клавиатуры
 def temperature_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Низкий (0.2)", callback_data="temp_0.2")],
@@ -37,7 +40,6 @@ def temperature_keyboard():
         [InlineKeyboardButton(text="Высокий (0.8)", callback_data="temp_0.8")]
     ])
 
-# Кнопки выбора seed
 def seed_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Случайность 1", callback_data="seed_0")],
@@ -53,7 +55,7 @@ async def cmd_start(message: Message, state: FSMContext):
         "имитируя живую речь с оттенками эмоций и интонации.\n\n"
         "📌 **Важно:**\n"
         "- Модель работает **только с текстом на английском языке**\n"
-        "- Озвучка **бесплатна**\n"
+        f"- Стоимость генерации: {PRICE_CHATTERBOX:.2f}₽\n"
         "- Чтобы задать **пол чтеца**, добавь к началу текста:\n"
         "  👉 `Male voice:` или `Female voice:`\n\n"
         "🎛 Сначала выбери стиль подачи текста:",
@@ -62,7 +64,7 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     await state.set_state(VoiceGenState.CHOOSE_TEMPERATURE)
 
-# Обработка выбора temperature
+# Выбор температуры
 async def choose_temperature(callback: CallbackQuery, state: FSMContext):
     temperature = float(callback.data.split("_")[1])
     await state.update_data(temperature=temperature)
@@ -73,7 +75,7 @@ async def choose_temperature(callback: CallbackQuery, state: FSMContext):
     await state.set_state(VoiceGenState.CHOOSE_SEED)
     await callback.answer()
 
-# Обработка выбора seed
+# Выбор seed
 async def choose_seed(callback: CallbackQuery, state: FSMContext):
     seed = int(callback.data.split("_")[1])
     await state.update_data(seed=seed)
@@ -85,11 +87,17 @@ async def choose_seed(callback: CallbackQuery, state: FSMContext):
     await state.set_state(VoiceGenState.AWAITING_TEXT)
     await callback.answer()
 
-# Обработка текста и генерация голоса
+# Генерация голоса
 async def handle_voice_text(message: Message, state: FSMContext):
+    user_id = message.from_user.id
     text = message.text.strip()
+
     if len(text) < 10:
         await message.answer("❌ Текст слишком короткий.")
+        return
+
+    if not has_enough_balance(user_id):
+        await message.answer(f"🚫 Недостаточно средств. Стоимость генерации — {PRICE_CHATTERBOX:.2f}₽.")
         return
 
     await message.answer("🎤 Генерация озвучки...")
@@ -111,7 +119,8 @@ async def handle_voice_text(message: Message, state: FSMContext):
             }
         )
 
-        # Получение аудио URL
+        # Получение ссылки на аудио
+        audio_url = None
         if hasattr(output, "url"):
             audio_url = output.url
         elif isinstance(output, str):
@@ -120,8 +129,9 @@ async def handle_voice_text(message: Message, state: FSMContext):
             audio_url = output[0]
         elif isinstance(output, dict) and "audio_url" in output:
             audio_url = output["audio_url"]
-        else:
-            raise ValueError("Не удалось получить URL аудио из вывода модели")
+
+        if not audio_url:
+            raise ValueError("Не удалось получить ссылку на аудио")
 
         # Скачиваем .wav
         async with aiohttp.ClientSession() as session:
@@ -144,18 +154,20 @@ async def handle_voice_text(message: Message, state: FSMContext):
         voice = FSInputFile("voice.ogg")
         await message.answer_voice(voice)
 
-    except Exception:
+        # Списание баланса
+        deduct_balance(user_id)
+
+    except Exception as e:
         logger.exception("Ошибка озвучки:")
         await message.answer("⚠️ Ошибка генерации аудио.")
     finally:
-        if os.path.exists("output.wav"):
-            os.remove("output.wav")
-        if os.path.exists("voice.ogg"):
-            os.remove("voice.ogg")
+        for file in ["output.wav", "voice.ogg"]:
+            if os.path.exists(file):
+                os.remove(file)
 
     await state.clear()
 
-# Запуск бота
+# Запуск
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
