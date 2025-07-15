@@ -31,23 +31,23 @@ class ImageGenState(StatesGroup):
 def aspect_ratio_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="1:1", callback_data="aspect_1:1"),
-            InlineKeyboardButton(text="9:16", callback_data="aspect_2:3"),
-            InlineKeyboardButton(text="16:9", callback_data="aspect_16:9"),
+            InlineKeyboardButton(text="1:1", callback_data="ideogram_aspect_1:1"),
+            InlineKeyboardButton(text="9:16", callback_data="ideogram_aspect_2:3"),
+            InlineKeyboardButton(text="16:9", callback_data="ideogram_aspect_16:9"),
         ]
     ])
 
 def style_type_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="Auto", callback_data="style_auto"),
-            InlineKeyboardButton(text="General", callback_data="style_general"),
-            InlineKeyboardButton(text="Anime", callback_data="style_anime"),
+            InlineKeyboardButton(text="Auto", callback_data="ideogram_style_auto"),
+            InlineKeyboardButton(text="General", callback_data="ideogram_style_general"),
+            InlineKeyboardButton(text="Anime", callback_data="ideogram_style_anime"),
         ],
         [
-            InlineKeyboardButton(text="Realistic", callback_data="style_realistic"),
-            InlineKeyboardButton(text="Design", callback_data="style_design"),
-            InlineKeyboardButton(text="Render 3D", callback_data="style_render3d"),
+            InlineKeyboardButton(text="Realistic", callback_data="ideogram_style_realistic"),
+            InlineKeyboardButton(text="Design", callback_data="ideogram_style_design"),
+            InlineKeyboardButton(text="Render 3D", callback_data="ideogram_style_render3d"),
         ]
     ])
 
@@ -74,8 +74,8 @@ async def cmd_start(message: Message, state: FSMContext):
     )
 
 # --- Обработка выбора соотношения сторон ---
-async def handle_aspect(callback: CallbackQuery, state: FSMContext):
-    aspect = callback.data.replace("aspect_", "")
+async def handle_aspect_ideogram(callback: CallbackQuery, state: FSMContext):
+    aspect = callback.data.replace("ideogram_aspect_", "")
     await state.update_data(aspect_ratio=aspect)
     await callback.message.edit_text(
         f"✅ Соотношение выбрано: {aspect}\n\nТеперь выбери стиль:",
@@ -84,8 +84,8 @@ async def handle_aspect(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ImageGenState.SELECTING_STYLE)
 
 # --- Обработка выбора стиля ---
-async def handle_style(callback: CallbackQuery, state: FSMContext):
-    style = callback.data.replace("style_", "")
+async def handle_style_aspect_ideogram(callback: CallbackQuery, state: FSMContext):
+    style = callback.data.replace("ideogram_style_", "")
     await state.update_data(style=style)
     await callback.message.edit_text(
         f"✅ Стиль установлен: {style}\n\n✏️ Теперь отправь описание (prompt) на английском."
@@ -93,7 +93,7 @@ async def handle_style(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ImageGenState.AWAITING_PROMPT)
 
 # --- Обработка prompt ---
-async def handle_prompt(message: Message, state: FSMContext):
+async def handle_prompt_aspect_ideogram(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 15:
         await message.answer("❌ Описание должно быть не короче 15 символов.")
@@ -142,10 +142,9 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.message.register(cmd_start, Command("start"))
-    # Команда /aspect удалена, регистрация не нужна
-    dp.callback_query.register(handle_aspect, F.data.startswith("aspect_"), StateFilter(ImageGenState.SELECTING_ASPECT))
-    dp.callback_query.register(handle_style, F.data.startswith("style_"), StateFilter(ImageGenState.SELECTING_STYLE))
-    dp.message.register(handle_prompt, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(handle_aspect_ideogram, F.data.startswith("ideogram_aspect_"), StateFilter(ImageGenState.SELECTING_ASPECT))
+    dp.callback_query.register(handle_style_aspect_ideogram, F.data.startswith("ideogram_style_"), StateFilter(ImageGenState.SELECTING_STYLE))
+    dp.message.register(handle_prompt_aspect_ideogram, StateFilter(ImageGenState.AWAITING_PROMPT))
 
     await dp.start_polling(bot)
 

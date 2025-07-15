@@ -60,11 +60,11 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(welcome_text, parse_mode="Markdown", reply_markup=aspect_ratio_kb())
     await state.set_state(ImageGenState.AWAITING_ASPECT)
 
-# --- Обработка выбора соотношения сторон ---
-async def aspect_selected(callback: CallbackQuery, state: FSMContext):
+# --- Обработка выбора соотношения сторон (переименован в aspect_imagegen4) ---
+async def aspect_imagegen4(callback: CallbackQuery, state: FSMContext):
     aspect_value = callback.data.split("_")[1]
     await state.update_data(aspect_ratio=aspect_value)
-    logger.info(f"[aspect_selected] Пользователь {callback.from_user.id} выбрал аспект {aspect_value}")
+    logger.info(f"[aspect_imagegen4] Пользователь {callback.from_user.id} выбрал аспект {aspect_value}")
 
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("Отправьте описание (промпт) на английском языке (минимум 15 символов):")
@@ -138,7 +138,7 @@ async def main():
 
     # Регистрация хендлеров
     dp.message.register(cmd_start, Command("start"))
-    dp.callback_query.register(aspect_selected, F.data.startswith("aspect_"), StateFilter(ImageGenState.AWAITING_ASPECT))
+    dp.callback_query.register(aspect_imagegen4, F.data.startswith("aspect_"), StateFilter(ImageGenState.AWAITING_ASPECT))
     dp.message.register(handle_prompt, StateFilter(ImageGenState.AWAITING_PROMPT))
 
     await dp.start_polling(bot)

@@ -39,7 +39,7 @@ class KlingVideoState(StatesGroup):
     waiting_prompt = State()
     confirm_pending = State()
 
-# Расчет цены в центах
+# Цены
 KLING_PRICES = {
     ("standard", 5): 140,
     ("standard", 10): 275,
@@ -92,7 +92,7 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     await state.set_state(KlingVideoState.waiting_image)
 
-# Обработка изображения
+# Изображение
 async def handle_image(message: Message, state: FSMContext):
     if not message.photo:
         await message.answer("❌ Пожалуйста, отправь изображение.")
@@ -101,7 +101,6 @@ async def handle_image(message: Message, state: FSMContext):
     photo = message.photo[-1]
     file = await message.bot.get_file(photo.file_id)
     image_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-
     await state.update_data(image_url=image_url)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -110,11 +109,10 @@ async def handle_image(message: Message, state: FSMContext):
             InlineKeyboardButton(text="🚀 Pro", callback_data="mode_pro"),
         ]
     ])
-
     await message.answer("Выбери режим генерации:", reply_markup=keyboard)
     await state.set_state(KlingVideoState.waiting_mode)
 
-# Выбор режима
+# Режим
 async def handle_mode_selection(callback: CallbackQuery, state: FSMContext):
     mode = callback.data.replace("mode_", "")
     await state.update_data(mode=mode)
@@ -125,12 +123,11 @@ async def handle_mode_selection(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="⏱ 10 сек", callback_data="duration_10"),
         ]
     ])
-
     await callback.message.edit_text("Выбери длительность:", reply_markup=keyboard)
     await state.set_state(KlingVideoState.waiting_duration)
     await callback.answer()
 
-# Выбор длительности (ввод prompt сразу после этого)
+# Длительность
 async def handle_duration_selection(callback: CallbackQuery, state: FSMContext):
     duration = int(callback.data.replace("duration_", ""))
     await state.update_data(duration=duration)
@@ -139,7 +136,7 @@ async def handle_duration_selection(callback: CallbackQuery, state: FSMContext):
     await state.set_state(KlingVideoState.waiting_prompt)
     await callback.answer()
 
-# Обработка prompt — расчет цены и подтверждение
+# Prompt
 async def handle_prompt(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 15:
@@ -168,7 +165,7 @@ async def handle_prompt(message: Message, state: FSMContext):
     )
     await state.set_state(KlingVideoState.confirm_pending)
 
-# Подтверждение генерации — списание и запуск
+# ✅ Генерация (обновлённая версия)
 async def handle_confirm_generation(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
@@ -182,17 +179,9 @@ async def handle_confirm_generation(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text("🎥 Генерация видео... Это может занять пару минут.")
 
-    model_map = {
-        ("standard", 5): "kwaivgi/kling-v2.1",
-        ("standard", 10): "kwaivgi/kling-v2.2",
-        ("pro", 5): "kwaivgi/kling-v2.3",
-        ("pro", 10): "kwaivgi/kling-v2.4",
-    }
-    model_version = model_map.get((data["mode"], data["duration"]))
-
     try:
         prediction = await replicate.predictions.async_create(
-            model=model_version,
+            model="kwaivgi/kling-v2.1",
             input={
                 "mode": data["mode"],
                 "prompt": prompt,
@@ -201,26 +190,37 @@ async def handle_confirm_generation(callback: CallbackQuery, state: FSMContext):
                 "negative_prompt": ""
             }
         )
+        logger.info(f"Создан prediction: {prediction.id}")
+
         while prediction.status not in ("succeeded", "failed"):
-            await asyncio.sleep(3)
+            logger.info(f"Статус: {prediction.status}")
+            await asyncio.sleep(5)
             prediction = await replicate.predictions.async_get(prediction.id)
 
         if prediction.status == "succeeded":
             output = prediction.output
-            video_url = output if isinstance(output, str) else next((url for url in output if isinstance(url, str)), None)
+            video_url = None
+
+            if isinstance(output, str):
+                video_url = output
+            elif isinstance(output, list):
+                video_url = next((url for url in output if isinstance(url, str) and url.endswith(".mp4")), None)
+
             if video_url:
                 await callback.message.answer_video(video_url, caption="✅ Готово! Вот твое видео.")
             else:
-                await callback.message.answer("⚠️ Не удалось получить видео.")
+                await callback.message.answer("⚠️ Видео получено, но формат неожидан или пустой.")
         else:
-            await callback.message.answer("❌ Ошибка при генерации видео.")
+            logger.error(f"Ошибка генерации: {prediction.error}")
+            await callback.message.answer("❌ Ошибка генерации видео.")
+
     except Exception as e:
         logger.exception("Ошибка при генерации:")
         await callback.message.answer("⚠️ Произошла ошибка при генерации видео.")
+    finally:
+        await state.clear()
 
-    await state.clear()
-
-# Запуск бота
+# Запуск
 async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())

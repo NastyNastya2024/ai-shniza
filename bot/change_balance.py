@@ -27,5 +27,5 @@ async def change_user_balance(telegram_id: int, amount: float):
 
 if __name__ == "__main__":
     telegram_id = 679030923
-    amount = -1008520  # задайте нужное значение
+    amount = 11008520  # задайте нужное значение
     asyncio.run(change_user_balance(telegram_id, amount))

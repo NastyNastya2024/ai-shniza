@@ -32,7 +32,7 @@ logger = logging.getLogger("tg_bot")
 replicate.api_token = REPLICATE_API_TOKEN
 
 # FSM состояние для ожидания текста для генерации видео
-class VideoGenState(StatesGroup):
+class Veo3State(StatesGroup):
     waiting_for_prompt = State()
     confirming_payment = State()
     processing = State()
@@ -82,7 +82,7 @@ async def cmd_start(message: Message, state: FSMContext):
         f"💲 Себестоимость: {GENERATION_COST / 100:.2f}$.\n"
         "Отправьте описание сцены."
     )
-    await state.set_state(VideoGenState.waiting_for_prompt)
+    await state.set_state(Veo3State.waiting_for_prompt)
 
 # Обработка текста с описанием сцены
 async def handle_prompt(message: Message, state: FSMContext):
@@ -111,7 +111,7 @@ async def handle_prompt(message: Message, state: FSMContext):
         f"📋 Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST} центов\n💼 Ваш баланс: {balance} центов",
         reply_markup=keyboard
     )
-    await state.set_state(VideoGenState.confirming_payment)
+    await state.set_state(Veo3State.confirming_payment)
 
 # Подтверждение и генерация видео
 async def confirm_generation(callback: CallbackQuery, state: FSMContext):
@@ -139,7 +139,9 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
             input={
                 "prompt": prompt,
                 "enhance_prompt": True,
-                "aspect_ratio": "9:16"
+                "aspect_ratio": "9:16",
+                "duration": 5,                   # попробуй явно указать
+                "seed": 42                       # можно любое число
             }
         )
         video_url = output.url if hasattr(output, "url") else output
@@ -157,8 +159,8 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.message.register(cmd_start, Command("start"))
-    dp.message.register(handle_prompt, StateFilter(VideoGenState.waiting_for_prompt))
-    dp.callback_query.register(confirm_generation, StateFilter(VideoGenState.confirming_payment), lambda c: c.data == "confirm_generation")
+    dp.message.register(handle_prompt, StateFilter(Veo3State.waiting_for_prompt))
+    dp.callback_query.register(confirm_generation, StateFilter(Veo3State.confirming_payment), lambda c: c.data == "confirm_generation")
 
     await dp.start_polling(bot)
 
