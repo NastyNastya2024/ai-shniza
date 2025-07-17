@@ -10,6 +10,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
+from keyboards import main_menu_kb, gpt_menu_kb, MAIN_MENU_BUTTON_TEXT
+
 import replicate
 
 # --- Загрузка переменных окружения ---
@@ -28,11 +30,28 @@ class PromptTranslationState(StatesGroup):
 # --- Команда /start ---
 async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(PromptTranslationState.WAITING_RU_PROMPT)
-    await message.answer("✏️ Введите текст на русском для перевода на английский:")
+    await message.answer(
+        "✏️ Введите текст на русском для перевода на английский:",
+        reply_markup=gpt_menu_kb()
+    )
+
+# --- Главное меню ---
+async def go_main_menu(message: Message, state: FSMContext):
+    logging.info(f"[MainMenu] Нажата кнопка: {message.text}")
+    await state.clear()
+    await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
 
 # --- Обработка ввода и перевод через Replicate ---
 async def handle_russian_prompt(message: Message, state: FSMContext):
-    ru_prompt = message.text.strip()
+    user_input = message.text.strip()
+
+    if user_input == MAIN_MENU_BUTTON_TEXT:
+        await go_main_menu(message, state)
+        return
+    elif user_input == "🔁 Повторить генерацию":
+        await cmd_start(message, state)
+        return
+
     await message.answer("⏳ Перевожу...")
 
     try:
@@ -40,7 +59,7 @@ async def handle_russian_prompt(message: Message, state: FSMContext):
         output = client.run(
             "openai/gpt-4.1-nano",
             input={
-                "prompt": f"Переведи следующий текст на английский: {ru_prompt}",
+                "prompt": f"Переведи следующий текст на английский: {user_input}",
                 "top_p": 1,
                 "temperature": 1,
                 "system_prompt": "You are a helpful assistant.",
@@ -50,36 +69,10 @@ async def handle_russian_prompt(message: Message, state: FSMContext):
             }
         )
 
-        # Объединяем список токенов в строку
         translated_prompt = "".join(output).strip()
-
-        await message.answer(
-            f"✅ Перевод",
-            parse_mode="Markdown"
-        )
-        await message.answer(
-            f"`{translated_prompt}`",
-            parse_mode="Markdown"
-        )
+        await message.answer("✅ Перевод:", reply_markup=gpt_menu_kb())
+        await message.answer(translated_prompt, reply_markup=gpt_menu_kb())
 
     except Exception as e:
         logger.exception("Ошибка при обращении к Replicate API")
-        await message.answer("❌ Произошла ошибка при переводе. Попробуйте позже.")
-
-    await state.clear()
-
-# --- Запуск бота ---
-async def main():
-    if not BOT_TOKEN or not REPLICATE_API_TOKEN:
-        raise EnvironmentError("Не заданы BOT_TOKEN или REPLICATE_API_TOKEN в .env")
-
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
-
-    dp.message.register(cmd_start, Command("start"))
-    dp.message.register(handle_russian_prompt, StateFilter(PromptTranslationState.WAITING_RU_PROMPT))
-
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        await message.answer("❌ Произошла ошибка при переводе. Попробуйте позже.", reply_markup=gpt_menu_kb())

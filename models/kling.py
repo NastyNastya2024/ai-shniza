@@ -80,7 +80,7 @@ async def deduct_user_balance(user_id: int, amount: int) -> bool:
             return False
 
 # /start
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start_kling(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Видео-бот на базе нейросети **Kling**\n\n"
@@ -93,7 +93,7 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(KlingVideoState.waiting_image)
 
 # Изображение
-async def handle_image(message: Message, state: FSMContext):
+async def handle_image_kling(message: Message, state: FSMContext):
     if not message.photo:
         await message.answer("❌ Пожалуйста, отправь изображение.")
         return
@@ -113,7 +113,7 @@ async def handle_image(message: Message, state: FSMContext):
     await state.set_state(KlingVideoState.waiting_mode)
 
 # Режим
-async def handle_mode_selection(callback: CallbackQuery, state: FSMContext):
+async def handle_mode_selection_kling(callback: CallbackQuery, state: FSMContext):
     mode = callback.data.replace("mode_", "")
     await state.update_data(mode=mode)
 
@@ -128,7 +128,7 @@ async def handle_mode_selection(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # Длительность
-async def handle_duration_selection(callback: CallbackQuery, state: FSMContext):
+async def handle_duration_selection_kling(callback: CallbackQuery, state: FSMContext):
     duration = int(callback.data.replace("duration_", ""))
     await state.update_data(duration=duration)
 
@@ -137,7 +137,7 @@ async def handle_duration_selection(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # Prompt
-async def handle_prompt(message: Message, state: FSMContext):
+async def handle_prompt_kling(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 15:
         await message.answer("❌ Описание слишком короткое. Минимум 15 символов.")
@@ -165,8 +165,8 @@ async def handle_prompt(message: Message, state: FSMContext):
     )
     await state.set_state(KlingVideoState.confirm_pending)
 
-# ✅ Генерация (обновлённая версия)
-async def handle_confirm_generation(callback: CallbackQuery, state: FSMContext):
+# Генерация
+async def handle_confirm_generation_kling(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     prompt = data.get("prompt", "")
@@ -225,12 +225,12 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.message.register(cmd_start, Command("start"))
-    dp.message.register(handle_image, StateFilter(KlingVideoState.waiting_image))
-    dp.callback_query.register(handle_mode_selection, lambda c: c.data.startswith("mode_"), StateFilter(KlingVideoState.waiting_mode))
-    dp.callback_query.register(handle_duration_selection, lambda c: c.data.startswith("duration_"), StateFilter(KlingVideoState.waiting_duration))
-    dp.message.register(handle_prompt, StateFilter(KlingVideoState.waiting_prompt))
-    dp.callback_query.register(handle_confirm_generation, lambda c: c.data == "confirm_gen", StateFilter(KlingVideoState.confirm_pending))
+    dp.message.register(cmd_start_kling, Command("start"))
+    dp.message.register(handle_image_kling, StateFilter(KlingVideoState.waiting_image))
+    dp.callback_query.register(handle_mode_selection_kling, lambda c: c.data.startswith("mode_"), StateFilter(KlingVideoState.waiting_mode))
+    dp.callback_query.register(handle_duration_selection_kling, lambda c: c.data.startswith("duration_"), StateFilter(KlingVideoState.waiting_duration))
+    dp.message.register(handle_prompt_kling, StateFilter(KlingVideoState.waiting_prompt))
+    dp.callback_query.register(handle_confirm_generation_kling, lambda c: c.data == "confirm_gen", StateFilter(KlingVideoState.confirm_pending))
 
     await dp.start_polling(bot)
 

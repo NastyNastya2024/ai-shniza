@@ -7,19 +7,26 @@ import ffmpeg
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, FSInputFile, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InputFile
+from aiogram.types import Message, FSInputFile, CallbackQuery
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
+from keyboards import (
+    MAIN_MENU_BUTTON_TEXT,
+    main_menu_kb,
+    universal_back_kb,
+    chatterbox_menu_kb,
+)
+
 # Загрузка переменных окружения
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# Настройка логирования
+# Настройка логов
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tg_bot")
 
@@ -29,7 +36,7 @@ class VoiceGenState(StatesGroup):
     CHOOSE_SEED = State()
     AWAITING_TEXT = State()
 
-# Кнопки выбора temperature
+# Инлайн-кнопки
 def temperature_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Низкий (0.2)", callback_data="temp_0.2")],
@@ -37,7 +44,6 @@ def temperature_keyboard():
         [InlineKeyboardButton(text="Высокий (0.8)", callback_data="temp_0.8")]
     ])
 
-# Кнопки выбора seed
 def seed_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Случайность 1", callback_data="seed_0")],
@@ -45,23 +51,11 @@ def seed_keyboard():
         [InlineKeyboardButton(text="Случайность 3", callback_data="seed_123")]
     ])
 
-# Кнопки для главного меню и повторной генерации
-def chatterbox_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [KeyboardButton(text="🏠 Главное меню")]
-    ], resize_keyboard=True)
-
-def back_main_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🏠 Главное меню")]
-    ], resize_keyboard=True)
-
-# Команда /start
+# /start
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     try:
-        photo = InputFile("welcome.jpg")
+        photo = FSInputFile("welcome.jpg")
         await message.answer_photo(photo, caption="👋 Добро пожаловать в Chatterbox!")
     except Exception as e:
         logger.warning(f"Ошибка с welcome.jpg: {e}")
@@ -81,7 +75,7 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     await state.set_state(VoiceGenState.CHOOSE_TEMPERATURE)
 
-# Обработка выбора temperature
+# temperature
 async def choose_temperature(callback: CallbackQuery, state: FSMContext):
     temperature = float(callback.data.split("_")[1])
     await state.update_data(temperature=temperature)
@@ -92,7 +86,7 @@ async def choose_temperature(callback: CallbackQuery, state: FSMContext):
     await state.set_state(VoiceGenState.CHOOSE_SEED)
     await callback.answer()
 
-# Обработка выбора seed
+# seed
 async def choose_seed(callback: CallbackQuery, state: FSMContext):
     seed = int(callback.data.split("_")[1])
     await state.update_data(seed=seed)
@@ -103,20 +97,20 @@ async def choose_seed(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(VoiceGenState.AWAITING_TEXT)
 
-# Обработка текста и генерация голоса
+# генерация
 async def handle_voice_text(message: Message, state: FSMContext):
-    # Обработка системных кнопок
-    if message.text == "🏠 Главное меню":
+    if message.text == MAIN_MENU_BUTTON_TEXT:
         await state.clear()
-        await message.answer("Вы вернулись в главное меню.", reply_markup=chatterbox_menu_kb())
+        await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu_kb())
         return
+
     if message.text == "🔁 Повторить генерацию":
         await cmd_start(message, state)
         return
 
     text = message.text.strip()
     if len(text) < 10:
-        await message.answer("❌ Текст слишком короткий.", reply_markup=back_main_menu_kb())
+        await message.answer("❌ Текст слишком короткий.", reply_markup=universal_back_kb())
         return
 
     await message.answer("🎤 Генерация озвучки...")
@@ -138,16 +132,14 @@ async def handle_voice_text(message: Message, state: FSMContext):
             }
         )
 
-        if hasattr(output, "url"):
-            audio_url = output.url
-        elif isinstance(output, str):
+        if isinstance(output, str):
             audio_url = output
         elif isinstance(output, list) and output:
             audio_url = output[0]
         elif isinstance(output, dict) and "audio_url" in output:
             audio_url = output["audio_url"]
         else:
-            raise ValueError("Не удалось получить URL аудио из вывода модели")
+            raise ValueError("Невозможно извлечь URL аудио")
 
         async with aiohttp.ClientSession() as session:
             async with session.get(audio_url) as resp:
@@ -171,30 +163,31 @@ async def handle_voice_text(message: Message, state: FSMContext):
         logger.exception("Ошибка озвучки:")
         await message.answer("⚠️ Ошибка генерации аудио.", reply_markup=chatterbox_menu_kb())
     finally:
-        if os.path.exists("output.wav"):
-            os.remove("output.wav")
-        if os.path.exists("voice.ogg"):
-            os.remove("voice.ogg")
+        for f in ["output.wav", "voice.ogg"]:
+            if os.path.exists(f):
+                os.remove(f)
 
     await state.clear()
 
-# Обработка кнопки "Главное меню" вне FSM
+# "🏠 Главное меню" — универсально
 async def go_main_menu(message: Message, state: FSMContext):
-    if message.text == "🏠 Главное меню":
-        await state.clear()
-        await message.answer("Вы в главном меню.", reply_markup=chatterbox_menu_kb())
+    await state.clear()
+    await message.answer("Вы в главном меню.", reply_markup=main_menu_kb())
 
-# Запуск бота
+# main()
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
+
+    # 🟢 Главное меню обрабатывается на ЛЮБОЕ состояние
+    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
 
     dp.message.register(cmd_start, Command("start"))
     dp.callback_query.register(choose_temperature, F.data.startswith("temp_"), StateFilter(VoiceGenState.CHOOSE_TEMPERATURE))
     dp.callback_query.register(choose_seed, F.data.startswith("seed_"), StateFilter(VoiceGenState.CHOOSE_SEED))
     dp.message.register(handle_voice_text, StateFilter(VoiceGenState.AWAITING_TEXT))
-    dp.message.register(go_main_menu, F.text == "🏠 Главное меню")
 
+    logging.info("🤖 Бот запущен")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
