@@ -4,6 +4,7 @@ import asyncio
 import replicate
 import aiohttp
 import ffmpeg
+import uuid
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, StateFilter
@@ -14,29 +15,28 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
-from keyboards import (
-    MAIN_MENU_BUTTON_TEXT,
-    main_menu_kb,
-    universal_back_kb,
-    chatterbox_menu_kb,
-)
+from sqlalchemy import select
+from sqlalchemy.exc import NoResultFound
+from database.db import async_session
+from database.models import User, PaymentRecord
+
+from keyboards import main_menu_kb
 
 # Загрузка переменных окружения
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# Настройка логов
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tg_bot")
 
-# Состояния FSM
 class VoiceGenState(StatesGroup):
     CHOOSE_TEMPERATURE = State()
     CHOOSE_SEED = State()
     AWAITING_TEXT = State()
+    CONFIRM_GENERATION = State()
 
-# Инлайн-кнопки
+# Кнопки
 def temperature_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Низкий (0.2)", callback_data="temp_0.2")],
@@ -51,100 +51,144 @@ def seed_keyboard():
         [InlineKeyboardButton(text="Случайность 3", callback_data="seed_123")]
     ])
 
-# /start
-async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()
-    try:
-        photo = FSInputFile("welcome.jpg")
-        await message.answer_photo(photo, caption="👋 Добро пожаловать в Chatterbox!")
-    except Exception as e:
-        logger.warning(f"Ошибка с welcome.jpg: {e}")
-        await message.answer("👋 Добро пожаловать в Chatterbox!")
+def confirm_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_generation")]
+    ])
 
+# Цена в рублях (float)
+def calculate_chatterbox_price() -> float:
+    return 10.0
+
+# Баланс
+async def get_user_balance(user_id: int) -> float:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user is None:
+            user = User(telegram_id=user_id, balance=0)
+            session.add(user)
+            await session.commit()
+            return 0.0
+        return float(user.balance)
+
+async def deduct_user_balance(user_id: int, amount: float) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user and user.balance >= amount:
+            user.balance -= amount
+            session.add(user)
+            session.add(PaymentRecord(
+                user_id=user.id,
+                amount=amount,
+                payment_id=str(uuid.uuid4()),
+                status="succeeded"
+            ))
+            await session.commit()
+            return True
+        return False
+
+# /start
+async def cmd_start_chatterbox(message: Message, state: FSMContext):
     await message.answer(
-        "🧠 Ты выбрал модель **Chatterbox** — она предназначена для создания реалистичной озвучки текста, "
-        "имитируя живую речь с оттенками эмоций и интонации.\n\n"
-        "📌 **Важно:**\n"
-        "- Модель работает **только с текстом на английском языке**\n"
-        "- Озвучка **бесплатна**\n"
-        "- Чтобы задать **пол чтеца**, добавь к началу текста:\n"
-        "  👉 `Male voice:` или `Female voice:`\n\n"
-        "🎛 Сначала выбери стиль подачи текста:",
+        "🧐 Ты выбрал модель **Chatterbox**...",
+        "🧐 Ты выбрал модель **Chatterbox**...",
+        "🧐 Ты выбрал модель **Chatterbox**...",
         reply_markup=temperature_keyboard(),
         parse_mode="Markdown"
     )
     await state.set_state(VoiceGenState.CHOOSE_TEMPERATURE)
 
-# temperature
-async def choose_temperature(callback: CallbackQuery, state: FSMContext):
+# Температура
+async def choose_temperature_chatterbox(callback: CallbackQuery, state: FSMContext):
     temperature = float(callback.data.split("_")[1])
     await state.update_data(temperature=temperature)
     await callback.message.edit_text(
-        "🎲 Теперь выбери вариант генерации (влияет на случайность результата):",
+        "🎲 Теперь выбери случайность:",
         reply_markup=seed_keyboard()
     )
     await state.set_state(VoiceGenState.CHOOSE_SEED)
     await callback.answer()
 
-# seed
-async def choose_seed(callback: CallbackQuery, state: FSMContext):
+# Seed
+async def choose_seed_chatterbox(callback: CallbackQuery, state: FSMContext):
     seed = int(callback.data.split("_")[1])
     await state.update_data(seed=seed)
     await callback.message.edit_text(
-        "✍️ Отправь текст на английском, который нужно озвучить.\n\n"
-        "Пример: `Hello! I’m your friendly voice bot.`",
+        "✍️ Отправь текст на английском",
         parse_mode="Markdown"
     )
     await state.set_state(VoiceGenState.AWAITING_TEXT)
 
-# генерация
-async def handle_voice_text(message: Message, state: FSMContext):
-    if message.text == MAIN_MENU_BUTTON_TEXT:
-        await state.clear()
-        await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu_kb())
-        return
-
-    if message.text == "🔁 Повторить генерацию":
-        await cmd_start(message, state)
-        return
-
+# Текст
+async def handle_voice_text_chatterbox(message: Message, state: FSMContext):
     text = message.text.strip()
     if len(text) < 10:
-        await message.answer("❌ Текст слишком короткий.", reply_markup=universal_back_kb())
+        await message.answer("❌ Текст слишком короткий.")
         return
 
-    await message.answer("🎤 Генерация озвучки...")
+    price = calculate_chatterbox_price()
+    balance = await get_user_balance(message.from_user.id)
 
-    replicate.api_token = REPLICATE_API_TOKEN
+    if balance < price:
+        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\n💼 Ваш баланс: {balance:.2f} ₽.\n Пополнить кошелек можно в разделе баланс")
+        await state.clear()
+        return
+
+    await state.update_data(prompt=text, price=price, is_confirmed=False)
+    await message.answer(
+        f"💰 Стоимость генерации: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽\n\nПодтвердите генерацию:",
+        reply_markup=confirm_keyboard()
+    )
+    await state.set_state(VoiceGenState.CONFIRM_GENERATION)
+
+# Подтверждение
+async def confirm_generation_chatterbox(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     data = await state.get_data()
-    temperature = data.get("temperature", 0.5)
-    seed = data.get("seed", 0)
+    if data.get("is_confirmed"):
+        return
+
+    await state.update_data(is_confirmed=True)
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    user_id = callback.from_user.id
+    if not await deduct_user_balance(user_id, data["price"]):
+        await callback.message.edit_text("❌ Не удалось списать средства.")
+        await state.clear()
+        return
+
+    await callback.message.edit_text("🎤 Генерация озвучки...")
 
     try:
-        output = replicate.run(
-            "resemble-ai/chatterbox",
+        replicate.api_token = REPLICATE_API_TOKEN
+        prediction = await replicate.predictions.async_create(
+            model="resemble-ai/chatterbox",
             input={
-                "prompt": text,
-                "seed": seed,
+                "prompt": data["prompt"],
+                "seed": data.get("seed", 0),
                 "cfg_weight": 0.5,
-                "temperature": temperature,
+                "temperature": data.get("temperature", 0.5),
                 "exaggeration": 0.5
             }
         )
 
-        if isinstance(output, str):
-            audio_url = output
-        elif isinstance(output, list) and output:
-            audio_url = output[0]
-        elif isinstance(output, dict) and "audio_url" in output:
-            audio_url = output["audio_url"]
-        else:
-            raise ValueError("Невозможно извлечь URL аудио")
+        while prediction.status not in ("succeeded", "failed"):
+            await asyncio.sleep(2)
+            prediction = await replicate.predictions.async_get(prediction.id)
+
+        if prediction.status != "succeeded":
+            raise Exception(f"Модель завершилась с ошибкой: {prediction.status}")
+
+        audio_url = prediction.output
+        if not isinstance(audio_url, str) or not audio_url.startswith("http"):
+            raise ValueError("Невалидный URL аудио")
 
         async with aiohttp.ClientSession() as session:
             async with session.get(audio_url) as resp:
                 if resp.status != 200:
-                    raise Exception("Ошибка скачивания аудио")
+                    raise Exception("Ошибка скачивания")
                 with open("output.wav", "wb") as f:
                     f.write(await resp.read())
 
@@ -157,35 +201,33 @@ async def handle_voice_text(message: Message, state: FSMContext):
         )
 
         voice = FSInputFile("voice.ogg")
-        await message.answer_voice(voice, reply_markup=chatterbox_menu_kb())
+        await callback.message.answer_voice(voice)
 
     except Exception:
         logger.exception("Ошибка озвучки:")
-        await message.answer("⚠️ Ошибка генерации аудио.", reply_markup=chatterbox_menu_kb())
+        await callback.message.answer("⚠️ Ошибка генерации аудио.")
     finally:
         for f in ["output.wav", "voice.ogg"]:
             if os.path.exists(f):
                 os.remove(f)
+        await state.clear()
 
-    await state.clear()
-
-# "🏠 Главное меню" — универсально
-async def go_main_menu(message: Message, state: FSMContext):
+# Главное меню
+async def go_main_menu_chatterbox(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы в главном меню.", reply_markup=main_menu_kb())
 
-# main()
+# Main
 async def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    # 🟢 Главное меню обрабатывается на ЛЮБОЕ состояние
-    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
-
-    dp.message.register(cmd_start, Command("start"))
-    dp.callback_query.register(choose_temperature, F.data.startswith("temp_"), StateFilter(VoiceGenState.CHOOSE_TEMPERATURE))
-    dp.callback_query.register(choose_seed, F.data.startswith("seed_"), StateFilter(VoiceGenState.CHOOSE_SEED))
-    dp.message.register(handle_voice_text, StateFilter(VoiceGenState.AWAITING_TEXT))
+    dp.message.register(go_main_menu_chatterbox, F.text == "🏠 Главное меню", StateFilter("*"))
+    dp.message.register(cmd_start_chatterbox, Command("start"))
+    dp.callback_query.register(choose_temperature_chatterbox, F.data.startswith("temp_"), StateFilter(VoiceGenState.CHOOSE_TEMPERATURE))
+    dp.callback_query.register(choose_seed_chatterbox, F.data.startswith("seed_"), StateFilter(VoiceGenState.CHOOSE_SEED))
+    dp.message.register(handle_voice_text_chatterbox, StateFilter(VoiceGenState.AWAITING_TEXT))
+    dp.callback_query.register(confirm_generation_chatterbox, F.data == "confirm_generation", StateFilter(VoiceGenState.CONFIRM_GENERATION))
 
     logging.info("🤖 Бот запущен")
     await dp.start_polling(bot)

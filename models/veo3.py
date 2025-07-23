@@ -37,8 +37,8 @@ class Veo3State(StatesGroup):
     confirming_payment = State()
     processing = State()
 
-# Стоимость генерации видео (в центах)
-GENERATION_COST = 600  # 6 долларов = 600 центов
+# Стоимость генерации видео (в рублях)
+GENERATION_COST_RUB = 600
 
 # Получение баланса пользователя
 async def get_user_balance(user_id: int) -> int:
@@ -72,20 +72,20 @@ async def deduct_user_balance(user_id: int, amount: int) -> bool:
             return False
 
 # Обработчик команды /start — сразу запрашиваем промпт
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start_veo3(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Модель Veo3 генерирует видео с звуком по описанию.\n"
         "💡 Описание (prompt) — на английском.\n"
-        "🛠️ Разрешение видео 16:9 .\n"
+        "🛠️ Разрешение видео 16:9.\n"
         "🛠️ Звук соответствует описанию.\n"
-        f"💲 Себестоимость: {GENERATION_COST / 100:.2f}$.\n"
+        f"💲 Себестоимость: {GENERATION_COST_RUB}₽.\n"
         "Отправьте описание сцены."
     )
     await state.set_state(Veo3State.waiting_for_prompt)
 
 # Обработка текста с описанием сцены
-async def handle_prompt(message: Message, state: FSMContext):
+async def handle_prompt_veo3(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 15:
         await message.answer("❌ Описание слишком короткое, минимум 15 символов. Попробуйте еще раз:")
@@ -94,10 +94,10 @@ async def handle_prompt(message: Message, state: FSMContext):
     user_id = message.from_user.id
     balance = await get_user_balance(user_id)
 
-    if balance < GENERATION_COST:
+    if balance < GENERATION_COST_RUB:
         await message.answer(
-            f"❌ Недостаточно средств.\n💸 Стоимость генерации: {GENERATION_COST} центов\n"
-            f"💼 Ваш баланс: {balance} центов"
+            f"❌ Недостаточно средств.\n💸 Стоимость генерации: {GENERATION_COST_RUB}₽\n"
+            f"💼 Ваш баланс: {balance}₽"
         )
         await state.clear()
         return
@@ -105,16 +105,16 @@ async def handle_prompt(message: Message, state: FSMContext):
     await state.update_data(prompt=prompt)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"✅ Подтвердить списание {GENERATION_COST} центов", callback_data="confirm_generation")]
+        [InlineKeyboardButton(text=f"✅ Подтвердить списание {GENERATION_COST_RUB}₽", callback_data="confirm_generation_veo3")]
     ])
     await message.answer(
-        f"📋 Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST} центов\n💼 Ваш баланс: {balance} центов",
+        f"📋 Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST_RUB}₽\n💼 Ваш баланс: {balance}₽",
         reply_markup=keyboard
     )
     await state.set_state(Veo3State.confirming_payment)
 
 # Подтверждение и генерация видео
-async def confirm_generation(callback: CallbackQuery, state: FSMContext):
+async def confirm_generation_veo3(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     prompt = data.get("prompt")
@@ -125,7 +125,7 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    success = await deduct_user_balance(user_id, GENERATION_COST)
+    success = await deduct_user_balance(user_id, GENERATION_COST_RUB)
     if not success:
         await callback.message.answer("❌ Не удалось списать средства. Попробуйте позже.")
         await state.clear()
@@ -140,13 +140,16 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
                 "prompt": prompt,
                 "enhance_prompt": True,
                 "aspect_ratio": "9:16",
-                "duration": 5,                   # попробуй явно указать
-                "seed": 42                       # можно любое число
+                "duration": 5,
+                "seed": 42
             }
         )
         video_url = output.url if hasattr(output, "url") else output
         logger.info(f"Видео сгенерировано: {video_url}")
         await callback.message.answer_video(video_url, caption="✅ Видео готово!")
+    except replicate.exceptions.ModelError as e:
+        logger.warning(f"Модель отклонила prompt как чувствительный: {e}")
+        await callback.message.answer("⚠️ Модель отклонила описание как чувствительное. Пожалуйста, измените prompt.")
     except Exception as e:
         logger.exception("Ошибка при генерации видео:")
         await callback.message.answer("⚠️ Произошла ошибка при генерации видео.")
@@ -158,9 +161,9 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.message.register(cmd_start, Command("start"))
-    dp.message.register(handle_prompt, StateFilter(Veo3State.waiting_for_prompt))
-    dp.callback_query.register(confirm_generation, StateFilter(Veo3State.confirming_payment), lambda c: c.data == "confirm_generation")
+    dp.message.register(cmd_start_veo3, Command("start"))
+    dp.message.register(handle_prompt_veo3, StateFilter(Veo3State.waiting_for_prompt))
+    dp.callback_query.register(confirm_generation_veo3, StateFilter(Veo3State.confirming_payment), lambda c: c.data == "confirm_generation_veo3")
 
     await dp.start_polling(bot)
 

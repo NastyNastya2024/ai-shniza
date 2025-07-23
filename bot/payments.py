@@ -2,7 +2,7 @@ import uuid
 import os
 import requests
 
-from database.db import SessionLocal
+from database.db import async_session  # исправлено
 from database.models import User
 from bot.config import PRICE_CHATTERBOX
 
@@ -39,19 +39,20 @@ def create_payment(amount: float, return_url: str, description: str = "Опла�
         json=data
     )
 
-    result = response.json()
-    return result
+    return response.json()
 
-def has_enough_balance(user_id: int, required_amount: float = PRICE_CHATTERBOX) -> bool:
-    with SessionLocal() as session:
-        user = session.query(User).filter_by(id=user_id).first()
-        return user is not None and user.balance >= required_amount
+# ✅ асинхронная проверка баланса
+async def has_enough_balance(user_id: int, required_amount: float = PRICE_CHATTERBOX) -> bool:
+    async with async_session() as session:
+        result = await session.get(User, user_id)
+        return result is not None and result.balance >= required_amount
 
-def deduct_balance(user_id: int, amount: float = PRICE_CHATTERBOX) -> bool:
-    with SessionLocal() as session:
-        user = session.query(User).filter_by(id=user_id).first()
+# ✅ асинхронное списание баланса
+async def deduct_balance(user_id: int, amount: float = PRICE_CHATTERBOX) -> bool:
+    async with async_session() as session:
+        user = await session.get(User, user_id)
         if user and user.balance >= amount:
             user.balance -= amount
-            session.commit()
+            await session.commit()
             return True
         return False

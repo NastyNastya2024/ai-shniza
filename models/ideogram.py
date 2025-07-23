@@ -1,24 +1,21 @@
 import os
 import logging
 import asyncio
-
+import replicate
+import uuid
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, StateFilter
 from aiogram.types import (
-    Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    ReplyKeyboardMarkup, KeyboardButton
+    Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 )
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-
-import replicate
 from dotenv import load_dotenv
-
+from sqlalchemy import select
+from database.db import async_session
+from database.models import User, PaymentRecord
 from keyboards import main_menu_kb, MAIN_MENU_BUTTON_TEXT
-
-# --- Константы ---
-REGENERATE_BUTTON_TEXT = "🔁 Новая генерация"
 
 # --- Загрузка переменных окружения ---
 load_dotenv()
@@ -27,22 +24,49 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 # --- Логирование ---
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("tg_bot")
+logger = logging.getLogger("ideogram")
 
 # --- FSM ---
 class IdeogramImageGenState(StatesGroup):
     SELECTING_ASPECT = State()
     SELECTING_STYLE = State()
     AWAITING_PROMPT = State()
+    CONFIRM_GENERATION_IDEOGRAM = State()
 
-# --- Клавиатура управления ---
-def ideogram_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=REGENERATE_BUTTON_TEXT)],
-        [KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)]
-    ], resize_keyboard=True)
+# --- Стоимость генерации ---
+def calculate_ideogram_price() -> float:
+    return 10.0
 
-# --- Клавиатура выбора соотношения ---
+# --- Работа с балансом ---
+async def get_user_balance(user_id: int) -> float:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user is None:
+            user = User(telegram_id=user_id, balance=0)
+            session.add(user)
+            await session.commit()
+            return 0.0
+        return float(user.balance)
+
+async def deduct_user_balance(user_id: int, amount: float) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user and user.balance >= amount:
+            user.balance -= amount
+            session.add(user)
+            session.add(PaymentRecord(
+                user_id=user.id,
+                amount=amount,
+                payment_id=str(uuid.uuid4()),
+                status="succeeded"
+            ))
+            await session.commit()
+            return True
+        return False
+
+# --- Клавиатура ---
 def aspect_ratio_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -52,7 +76,6 @@ def aspect_ratio_kb():
         ]
     ])
 
-# --- Клавиатура выбора стиля ---
 def style_type_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -67,18 +90,11 @@ def style_type_kb():
         ]
     ])
 
-# --- Старт генерации ---
+# --- Старт ---
 async def ideogram_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "🖼 Ideogram V2 Turbo — генерация изображений по текстовому описанию на английском.\n\n"
-        "📋 *Возможности:*\n"
-        "- Генерация реалистичных и художественных изображений\n"
-        "- Поддержка различных соотношений сторон\n"
-        "- Высокое качество и детализация\n\n"
-        "⚠️ *Важно:*\n"
-        "- Промпт (описание) — только на английском языке\n"
-        "- 💰 Стоимость: бесплатно (или укажи, если платно)",
+        f"🖼 Ideogram V2 Turbo\n\nСтоимость генерации: {calculate_ideogram_price():.2f} ₽",
         parse_mode="Markdown"
     )
     await state.set_state(IdeogramImageGenState.SELECTING_ASPECT)
@@ -89,68 +105,64 @@ async def go_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🏠 Вы в главном меню", reply_markup=main_menu_kb())
 
-# --- Обработка кнопок управления ---
-async def handle_control_buttons(message: Message, state: FSMContext):
-    text = message.text.strip()
-    if text == REGENERATE_BUTTON_TEXT:
-        await ideogram_start(message, state)
-    elif text == MAIN_MENU_BUTTON_TEXT:
-        await go_main_menu(message, state)
-
-# --- Обработка выбора соотношения ---
+# --- Обработка ---
 async def handle_aspect_ideogram(callback: CallbackQuery, state: FSMContext):
     aspect = callback.data.replace("ideogram_aspect_", "")
     await state.update_data(aspect_ratio=aspect)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(
-        f"✅ Соотношение выбрано: {aspect}\n\nТеперь выбери стиль:",
-        reply_markup=style_type_kb()
-    )
+    await callback.message.answer("✅ Соотношение выбрано. Теперь выбери стиль:", reply_markup=style_type_kb())
     await state.set_state(IdeogramImageGenState.SELECTING_STYLE)
     await callback.answer()
 
-# --- Обработка выбора стиля ---
 async def handle_style_aspect_ideogram(callback: CallbackQuery, state: FSMContext):
     style = callback.data.replace("ideogram_style_", "")
     await state.update_data(style=style)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(
-        f"✅ Стиль выбран: {style}\n\n✏️ Введите описание (prompt) на английском:",
-        reply_markup=ideogram_menu_kb()
-    )
+    await callback.message.answer("✏️ Введите описание (prompt) на английском:")
     await state.set_state(IdeogramImageGenState.AWAITING_PROMPT)
     await callback.answer()
 
-# --- Обработка prompt ---
 async def handle_prompt_aspect_ideogram(message: Message, state: FSMContext):
-    text = message.text.strip()
-
-    if text == REGENERATE_BUTTON_TEXT:
-        await ideogram_start(message, state)
+    prompt = message.text.strip()
+    if len(prompt) < 5:
+        await message.answer("❌ Промпт слишком короткий.")
         return
 
-    if text == MAIN_MENU_BUTTON_TEXT:
-        await go_main_menu(message, state)
+    price = calculate_ideogram_price()
+    balance = await get_user_balance(message.from_user.id)
+
+    if balance < price:
+        await message.answer(f"❌ Недостаточно средств. Стоимость: {price:.2f} ₽ | Баланс: {balance:.2f} ₽")
+        await state.clear()
         return
 
-    if len(text) < 15:
-        await message.answer("❌ Описание должно быть не короче 15 символов.", reply_markup=ideogram_menu_kb())
-        return
+    await state.update_data(prompt=prompt, price=price)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_generation_ideogram")]
+    ])
+    await message.answer(f"💰 Стоимость: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽\nПодтвердите генерацию:", reply_markup=kb)
+    await state.set_state(IdeogramImageGenState.CONFIRM_GENERATION_IDEOGRAM)
 
-    await message.answer("⏳ Генерация изображения...", reply_markup=ideogram_menu_kb())
+async def confirm_generation_ideogram(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     data = await state.get_data()
-    aspect = data.get("aspect_ratio", "1:1")
-    style = data.get("style", "auto")
+    user_id = callback.from_user.id
+
+    if not await deduct_user_balance(user_id, data["price"]):
+        await callback.message.edit_text("❌ Не удалось списать средства.")
+        await state.clear()
+        return
+
+    await callback.message.edit_text("⏳ Генерация изображения...")
 
     try:
         replicate.api_token = REPLICATE_API_TOKEN
-
         prediction = await replicate.predictions.async_create(
             model="ideogram-ai/ideogram-v2-turbo",
             input={
-                "prompt": text,
-                "aspect_ratio": aspect,
-                "style": style
+                "prompt": data["prompt"],
+                "aspect_ratio": data.get("aspect_ratio", "1:1"),
+                "style": data.get("style", "auto")
             }
         )
 
@@ -162,18 +174,18 @@ async def handle_prompt_aspect_ideogram(message: Message, state: FSMContext):
             raise RuntimeError("Генерация не удалась")
 
         image_url = prediction.output[0] if isinstance(prediction.output, list) else prediction.output
-        await message.answer_photo(image_url, caption=f"✅ Prompt: {text}", reply_markup=ideogram_menu_kb())
+        await callback.message.answer_photo(image_url, caption=f"✅ Prompt: {data['prompt']}")
 
     except Exception as e:
         logger.exception("Ошибка генерации изображения")
-        await message.answer("❌ Произошла ошибка при генерации.", reply_markup=ideogram_menu_kb())
+        await callback.message.answer("❌ Произошла ошибка при генерации.")
 
     await state.clear()
 
-# --- Запуск (только для отладки) ---
+# --- main ---
 async def main():
     if not BOT_TOKEN or not REPLICATE_API_TOKEN:
-        raise EnvironmentError("Не заданы переменные окружения BOT_TOKEN или REPLICATE_API_TOKEN")
+        raise EnvironmentError("BOT_TOKEN или REPLICATE_API_TOKEN не установлены")
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
@@ -182,12 +194,7 @@ async def main():
     dp.callback_query.register(handle_aspect_ideogram, F.data.startswith("ideogram_aspect_"), StateFilter(IdeogramImageGenState.SELECTING_ASPECT))
     dp.callback_query.register(handle_style_aspect_ideogram, F.data.startswith("ideogram_style_"), StateFilter(IdeogramImageGenState.SELECTING_STYLE))
     dp.message.register(handle_prompt_aspect_ideogram, StateFilter(IdeogramImageGenState.AWAITING_PROMPT))
-
-    # Поддержка кнопок на всех этапах
-    dp.message.register(handle_control_buttons, F.text.in_({REGENERATE_BUTTON_TEXT, MAIN_MENU_BUTTON_TEXT}))
-    dp.message.register(handle_control_buttons, StateFilter(IdeogramImageGenState.SELECTING_ASPECT))
-    dp.message.register(handle_control_buttons, StateFilter(IdeogramImageGenState.SELECTING_STYLE))
-    dp.message.register(handle_control_buttons, StateFilter(IdeogramImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_ideogram, F.data == "confirm_generation_ideogram", StateFilter(IdeogramImageGenState.CONFIRM_GENERATION_IDEOGRAM))
 
     await dp.start_polling(bot)
 

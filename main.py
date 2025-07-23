@@ -4,29 +4,88 @@ import asyncio
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, CallbackQuery, InputFile
+from aiogram.types import Message, CallbackQuery, InputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
+from bot.start import show_payment_options, router as start_router
 from models.kling import KlingVideoState, cmd_start_kling, handle_image_kling, handle_mode_selection_kling, handle_duration_selection_kling, handle_prompt_kling, handle_confirm_generation_kling
 from models.gpt import PromptTranslationState, cmd_start as gpt_start, handle_russian_prompt
-from models.minimax import VideoGenState, cmd_start as minimax_start, handle_image as minimax_handle_image, handle_prompt as minimax_handle_prompt, confirm_generation as minimax_confirm_generation
-from models.musicgen import MusicGenStates, start_handler as musicgen_start, model_chosen, normalization_chosen, receive_prompt
-from models.seedance import VideoGenState as SeedanceState, cmd_start as seedance_start, handle_image as seedance_handle_image, handle_prompt as seedance_handle_prompt, handle_duration, handle_resolution, handle_aspect_ratio, handle_camera_fixed, handle_confirm_generation
-from models.veo3 import Veo3State, cmd_start as veo3_start, handle_prompt as veo3_handle_prompt, confirm_generation as veo3_confirm_generation
 from models import ideogram, imagegen4, flux, veo3, kling, minimax, seedance, musicgen, chatterbox, gpt
-from models.flux import go_main_menu  # ← добавь эту строку
-from models.imagegen4 import ImageGenState, cmd_start as imagegen4_start, aspect_imagegen4, handle_prompt as imagegen4_handle_prompt
+from models.minimax import VideoGenState, minimax_start, minimax_handle_image, minimax_handle_prompt,  minimax_confirm_generation
+from models.veo3 import (
+    Veo3State,
+    cmd_start_veo3,
+    handle_prompt_veo3,
+    confirm_generation_veo3,
+)
+
+
+from models.imagegen4 import (
+    ImageGenState,
+    cmd_start_imagegen4,
+    aspect_imagegen4,
+    handle_prompt_imagegen4,
+    confirm_generation_imagegen4,
+    go_main_menu_imagegen4,
+)
+
+from models.musicgen import (
+    MusicGenStates,
+    start_handler_musicgen,
+    model_chosen_musicgen,
+    normalization_chosen_musicgen,
+    receive_prompt_musicgen,
+    confirm_generation_musicgen,
+)
+
 from models.ideogram import (
     IdeogramImageGenState,
     ideogram_start,
     handle_aspect_ideogram,
     handle_style_aspect_ideogram,
     handle_prompt_aspect_ideogram,
-    handle_control_buttons
+    confirm_generation_ideogram,
 )
+
+
+
+from models.flux import (
+    FluxKontextState,
+    cmd_start_flux,
+    handle_image_flux,
+    handle_aspect_ratio_flux,
+    handle_flux_style_flux,
+    handle_prompt_flux,
+    confirm_generation_flux,
+    go_main_menu,
+)
+
+
+from models.seedance import (
+    SeedanceState,
+    seedance_cmd_start,
+    seedance_handle_image,
+    seedance_handle_prompt,
+    seedance_handle_resolution,
+    seedance_handle_duration,
+    seedance_handle_aspect_ratio,
+    seedance_handle_camera_fixed,
+    seedance_handle_confirm_generation
+)
+from models.chatterbox import (
+    VoiceGenState,
+    go_main_menu_chatterbox,
+    cmd_start_chatterbox,
+    choose_temperature_chatterbox,
+    choose_seed_chatterbox,
+    handle_voice_text_chatterbox,
+    confirm_generation_chatterbox,
+)
+
+
 
 from keyboards import (
     MAIN_MENU_BUTTON_TEXT,
@@ -55,6 +114,18 @@ class MenuState(StatesGroup):
     video_menu = State()
     video_image_menu = State()
     music_menu = State()
+    
+
+async def main():
+    if not BOT_TOKEN or not REPLICATE_API_TOKEN:
+        logger.error("❌ Переменные окружения не заданы")
+        return
+
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher(storage=MemoryStorage())
+
+    
+
 
 # === Основной роутер ===
 router = Router()
@@ -63,19 +134,53 @@ router = Router()
 @router.message(F.text == "/start")
 async def cmd_start(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} начал работу")
-    try:
-        photo = InputFile("welcome.jpg")
-        await message.answer_photo(photo, caption=f"👋 Привет, {message.from_user.first_name}!\nДобро пожаловать!")
-    except Exception as e:
-        logger.warning(f"Ошибка welcome.jpg: {e}")
-        await message.answer(f"👋 Привет, {message.from_user.first_name}!\n(Изображение недоступно)")
-    await message.answer("Выберите действие:", reply_markup=main_menu_kb())
-    await state.clear()
+
+    await message.answer(
+        f"👋 Привет, {message.from_user.first_name}!\n"
+        f"Добро пожаловать в бота *AIшница* 🤖\n\n"
+        f"_Бот предоставляет платные генерации изображений, видео, аудио и текстов с помощью ИИ._\n\n"
+
+        f"🖼 *Генерация изображений:*\n"
+        f"- Ideogram — от 9 ₽\n"
+        f"- Imagen-4 — от 9 ₽\n"
+        f"- FluxKontext — от 9 ₽\n\n"
+
+        f"🎬 *Генерация видео:*\n"
+        f"- Kling v2.1 — от 55 - 199 ₽\n"
+        f"- Minimax Video — от 150 ₽\n"
+        f"- Seedance  — от 80 ₽\n"
+        f"- Veo3 (8 секунд) — от 660 ₽\n\n"
+
+        f"🎵 *Генерация музыки:*\n"
+        f"- Minimax Music — от 9 ₽\n"
+        f"- MusicGen — 9 ₽\n"
+        f"- Chatterbox — 9 ₽\n\n"
+
+        f"💬 *Текст и речь:*\n"
+        f"- GPT перевод — бесплатно\n\n"
+
+        f"💼 *Юридическая информация:*\n"
+        f"ИП А А Комарова»\n"
+        f"ИНН 504231947047 | ОГРН 322508100272216\n\n"
+        f"❗ Ознакомьтесь с тарифами и офертой через кнопку 📊 *Баланс*",
+        parse_mode="Markdown"
+    )
+
+    # 👇 добавлено: сразу переход в главное меню
+    await to_main_menu(message, state)
 
 @router.message(F.text == "Главное меню")
 async def to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
+    
+@router.message(Command("main"))
+async def cmd_main_alias(message: Message, state: FSMContext):
+    await to_main_menu(message, state)
+    
+@router.message(F.text == "📊 Баланс")
+async def show_balance_options(message: Message, state: FSMContext):
+    await show_payment_options(message)
 
 @router.message(F.text == "🎨 Генерация")
 async def generation_menu(message: Message, state: FSMContext):
@@ -98,11 +203,11 @@ async def run_ideogram_menu(message: Message, state: FSMContext):
 
 @router.message(F.text == "Imagegen4.py")
 async def run_imagegen4(message: Message, state: FSMContext):
-    await imagegen4.cmd_start(message, state)
+    await imagegen4.cmd_start_imagegen4(message, state)
 
 @router.message(F.text == "🖼 Картинка из картинки")
 async def run_flux(message: Message, state: FSMContext):
-    await flux.cmd_start(message, state)
+    await flux.cmd_start_flux(message, state)
 
 @router.message(F.text == "🎬 Видео")
 async def video_menu(message: Message, state: FSMContext):
@@ -111,7 +216,7 @@ async def video_menu(message: Message, state: FSMContext):
 
 @router.message(F.text == "📄 Видео из текста")
 async def run_veo3(message: Message, state: FSMContext):
-    await veo3.cmd_start(message, state)
+    await veo3.cmd_start_veo3(message, state)
 
 @router.message(F.text == "🖼 Видео из картинки")
 async def video_img_menu(message: Message, state: FSMContext):
@@ -124,36 +229,31 @@ async def run_kling(message: Message, state: FSMContext):
 
 @router.message(F.text == "Minimax")
 async def run_minimax(message: Message, state: FSMContext):
-    await minimax.cmd_start(message, state)
+    await minimax.minimax_start(message, state)
 
 @router.message(F.text == "Seedance")
 async def run_seedance(message: Message, state: FSMContext):
-    await seedance.cmd_start(message, state)
+    await seedance.seedance_cmd_start(message, state)
 
 @router.message(F.text == "🎵 Музыка")
 async def music_menu(message: Message, state: FSMContext):
     await state.set_state(MenuState.music_menu)
     await message.answer("Выберите модель:", reply_markup=music_menu_kb())
 
-@router.message(F.text == "MusicMax")
-async def run_musicmax(message: Message, state: FSMContext):
-    await musicgen.cmd_start(message, state)
 
 @router.message(F.text == "MusicGen")
 async def run_musicgen(message: Message, state: FSMContext):
-    await musicgen.cmd_start(message, state)
+    await musicgen.start_handler_musicgen(message, state)
 
 @router.message(F.text == "Chatterbox")
 async def run_chatterbox(message: Message, state: FSMContext):
-    await chatterbox.cmd_start(message, state)
+    await chatterbox.сmd_start_chatterbox(message, state)
 
 @router.message(F.text == "🔤 Перевод")
 async def translate_dummy(message: Message):
     await message.answer("Пример перевода: Hello → Привет")
 
-@router.message(F.text == "📊 Баланс")
-async def balance_dummy(message: Message):
-    await message.answer("Ваш баланс: 100 💰")
+
 
 # === Запуск ===
 async def main():
@@ -165,49 +265,43 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.include_router(router)
+    dp.include_router(start_router) # подключение кнопок оплаты
 
     # === Регистрация FSM-хендлеров ===
+
+    dp.message.register(go_main_menu, Command("main"))
+    dp.message.register(go_main_menu, F.text.lower() == "main")
+    
     # ImageGen4 (Google Imagen)
-    dp.message.register(imagegen4_start, F.text == "Imagegen4.py")
+    dp.message.register(cmd_start_imagegen4, F.text == "Imagegen4.py")
     dp.callback_query.register(aspect_imagegen4, F.data.startswith("aspect_"), StateFilter(ImageGenState.AWAITING_ASPECT))
-    dp.message.register(imagegen4_handle_prompt, StateFilter(ImageGenState.AWAITING_PROMPT))
-    dp.message.register(imagegen4_start, F.text == "🔁 Повторить генерацию", StateFilter(ImageGenState.AWAITING_PROMPT))
-    dp.message.register(imagegen4_start, F.text == "🔁 Повторить генерацию")
-    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.message.register(handle_prompt_imagegen4, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.message.register(go_main_menu_imagegen4, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_imagegen4, F.data == "confirm_generation_imagegen4", StateFilter(ImageGenState.CONFIRM_GENERATION))
 
-    # === Ideogram ===
-    dp.message.register(ideogram_start, F.text == "Ideogram.py")
-    dp.callback_query.register(handle_aspect_ideogram, F.data.startswith("ideogram_aspect_"), StateFilter(IdeogramImageGenState.SELECTING_ASPECT))
-    dp.callback_query.register(handle_style_aspect_ideogram, F.data.startswith("ideogram_style_"), StateFilter(IdeogramImageGenState.SELECTING_STYLE))
-    dp.message.register(handle_prompt_aspect_ideogram, StateFilter(IdeogramImageGenState.AWAITING_PROMPT))
-    dp.message.register(handle_control_buttons, F.text.in_({"🏠 Главное меню", "🔁 Новая генерация"}))
-    dp.message.register(handle_control_buttons, F.text.in_({"🏠 Главное меню", "🔁 Новая генерация"}), StateFilter("*"))
-
-
-    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
+    
     dp.message.register(gpt_start, F.text == "🔤 Перевод")
     dp.message.register(handle_russian_prompt, StateFilter(PromptTranslationState.WAITING_RU_PROMPT))
-    dp.message.register(gpt.cmd_start, F.text == "🔁 Повторить генерацию", StateFilter(PromptTranslationState.WAITING_RU_PROMPT))
 
-    dp.message.register(chatterbox.go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
-    dp.message.register(chatterbox.cmd_start, F.text == "Chatterbox")
-    dp.callback_query.register(chatterbox.choose_temperature, F.data.startswith("temp_"), StateFilter(chatterbox.VoiceGenState.CHOOSE_TEMPERATURE))
-    dp.callback_query.register(chatterbox.choose_seed, F.data.startswith("seed_"), StateFilter(chatterbox.VoiceGenState.CHOOSE_SEED))
-    dp.message.register(chatterbox.handle_voice_text, StateFilter(chatterbox.VoiceGenState.AWAITING_TEXT))
+    dp.message.register(go_main_menu_chatterbox, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
+    dp.message.register(cmd_start_chatterbox, F.text == "Chatterbox")
+    dp.callback_query.register(choose_temperature_chatterbox, F.data.startswith("temp_"), StateFilter(VoiceGenState.CHOOSE_TEMPERATURE))
+    dp.callback_query.register(choose_seed_chatterbox, F.data.startswith("seed_"), StateFilter(VoiceGenState.CHOOSE_SEED))
+    dp.message.register(handle_voice_text_chatterbox, StateFilter(VoiceGenState.AWAITING_TEXT))
+    dp.callback_query.register(confirm_generation_chatterbox, F.data == "confirm_generation", StateFilter(VoiceGenState.CONFIRM_GENERATION))
 
     dp.message.register(minimax_start, F.text == "Minimax")
     dp.message.register(minimax_handle_image, StateFilter(VideoGenState.waiting_image))
     dp.message.register(minimax_handle_prompt, StateFilter(VideoGenState.waiting_prompt))
     dp.callback_query.register(minimax_confirm_generation, F.data == "confirm_generation", StateFilter(VideoGenState.confirming_payment))
 
-    dp.message.register(seedance_start, F.text == "Seedance")
     dp.message.register(seedance_handle_image, StateFilter(SeedanceState.waiting_image))
     dp.message.register(seedance_handle_prompt, StateFilter(SeedanceState.waiting_prompt))
-    dp.callback_query.register(handle_duration, StateFilter(SeedanceState.waiting_duration))
-    dp.callback_query.register(handle_resolution, StateFilter(SeedanceState.waiting_resolution))
-    dp.callback_query.register(handle_aspect_ratio, StateFilter(SeedanceState.waiting_aspect_ratio))
-    dp.callback_query.register(handle_camera_fixed, StateFilter(SeedanceState.waiting_camera_fixed))
-    dp.callback_query.register(handle_confirm_generation, F.data == "confirm_generation", StateFilter(SeedanceState.confirm_pending))
+    dp.callback_query.register(seedance_handle_resolution, StateFilter(SeedanceState.waiting_resolution), lambda c: c.data.startswith("res_"))
+    dp.callback_query.register(seedance_handle_duration, StateFilter(SeedanceState.waiting_duration), lambda c: c.data.startswith("dur_"))
+    dp.callback_query.register(seedance_handle_aspect_ratio, StateFilter(SeedanceState.waiting_aspect_ratio), lambda c: c.data.startswith("ar_"))
+    dp.callback_query.register(seedance_handle_camera_fixed, StateFilter(SeedanceState.waiting_camera_fixed), lambda c: c.data in ["cam_fixed", "cam_move"])
+    dp.callback_query.register(seedance_handle_confirm_generation, lambda c: c.data == "confirm_generation")
 
     dp.message.register(cmd_start_kling, F.text == "Kling")
     dp.message.register(handle_image_kling, StateFilter(KlingVideoState.waiting_image))
@@ -215,22 +309,38 @@ async def main():
     dp.callback_query.register(handle_duration_selection_kling, F.data.startswith("duration_"), StateFilter(KlingVideoState.waiting_duration))
     dp.message.register(handle_prompt_kling, StateFilter(KlingVideoState.waiting_prompt))
     dp.callback_query.register(handle_confirm_generation_kling, F.data == "confirm_gen", StateFilter(KlingVideoState.confirm_pending))
+    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT)
 
-    dp.message.register(musicgen_start, F.text == "MusicGen")
-    dp.callback_query.register(model_chosen, StateFilter(MusicGenStates.choosing_model))
-    dp.callback_query.register(normalization_chosen, StateFilter(MusicGenStates.choosing_normalization))
-    dp.message.register(receive_prompt, StateFilter(MusicGenStates.waiting_for_prompt))
-
-    dp.message.register(veo3_start, F.text == "Veo3")
-    dp.message.register(veo3_handle_prompt, StateFilter(Veo3State.waiting_for_prompt))
-    dp.callback_query.register(veo3_confirm_generation, F.data == "confirm_generation", StateFilter(Veo3State.confirming_payment))
     
-    dp.message.register(flux.repeat_generation, F.text == "🔁 Повторить генерацию", StateFilter("*"))
-    dp.message.register(flux.go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
-    dp.message.register(flux.repeat_generation, F.text == "🔁 Повторить генерацию", StateFilter("*"))
-    dp.message.register(flux.handle_image_flux, StateFilter(flux.FluxKontextState.WAITING_IMAGE))
-    dp.callback_query.register(flux.handle_aspect_ratio, F.data.startswith("aspect_"), StateFilter(flux.FluxKontextState.WAITING_ASPECT_RATIO))
-    dp.message.register(flux.handle_prompt, StateFilter(flux.FluxKontextState.WAITING_PROMPT))
+    dp.message.register(start_handler_musicgen, F.text == "MusicGen")
+    dp.callback_query.register(model_chosen_musicgen, StateFilter(MusicGenStates.choosing_model))
+    dp.callback_query.register(normalization_chosen_musicgen, StateFilter(MusicGenStates.choosing_normalization))
+    dp.message.register(receive_prompt_musicgen, StateFilter(MusicGenStates.waiting_for_prompt))
+    dp.callback_query.register(confirm_generation_musicgen, F.data == "confirm_generation_musicgen", StateFilter(MusicGenStates.confirming_payment))
+
+    dp.message.register(cmd_start_veo3, F.text == "Veo3")
+    dp.message.register(handle_prompt_veo3, StateFilter(Veo3State.waiting_for_prompt))
+    dp.callback_query.register(confirm_generation_veo3, F.data == "confirm_generation_veo3", StateFilter(Veo3State.confirming_payment))
+        
+    dp.message.register(cmd_start_imagegen4, F.text == "Imagegen4.py")
+    dp.callback_query.register(aspect_imagegen4, F.data.startswith("aspect_"), StateFilter(ImageGenState.AWAITING_ASPECT))
+    dp.message.register(handle_prompt_imagegen4, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_imagegen4, F.data == "confirm_generation_imagegen4", StateFilter(ImageGenState.CONFIRM_GENERATION))
+    dp.message.register(go_main_menu_imagegen4, F.text == MAIN_MENU_BUTTON_TEXT, StateFilter("*"))
+
+    # === Ideogram ===
+    dp.message.register(ideogram_start, F.text == "Ideogram.py")
+    dp.callback_query.register(handle_aspect_ideogram, F.data.startswith("ideogram_aspect_"), StateFilter(IdeogramImageGenState.SELECTING_ASPECT))
+    dp.callback_query.register(handle_style_aspect_ideogram, F.data.startswith("ideogram_style_"), StateFilter(IdeogramImageGenState.SELECTING_STYLE))
+    dp.message.register(handle_prompt_aspect_ideogram, StateFilter(IdeogramImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_ideogram, F.data == "confirm_generation_ideogram", StateFilter(IdeogramImageGenState.CONFIRM_GENERATION_IDEOGRAM))
+
+    dp.message.register(cmd_start_flux, F.text == "Flux")
+    dp.message.register(handle_image_flux, StateFilter(FluxKontextState.WAITING_IMAGE))
+    dp.callback_query.register(handle_aspect_ratio_flux, StateFilter(FluxKontextState.WAITING_ASPECT_RATIO))
+    dp.message.register(handle_prompt_flux, StateFilter(FluxKontextState.WAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_flux, F.data == "confirm_generation_flux", StateFilter(FluxKontextState.CONFIRM_GENERATION_FLUX))
+    dp.message.register(go_main_menu, F.text == "🏠 Главное меню")
 
     logger.info("🤖 Бот запущен")
     await bot.delete_webhook(drop_pending_updates=True)

@@ -14,17 +14,7 @@ def main_menu_kb():
         [KeyboardButton(text="📊 Баланс")]
     ], resize_keyboard=True)
     
-def imagegen4_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [main_menu_button]
-    ], resize_keyboard=True)
-     
-def gpt_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+
     
 # Универсальная клавиатура "Назад"
 def universal_back_kb():
@@ -32,12 +22,7 @@ def universal_back_kb():
         [main_menu_button]
     ], resize_keyboard=True)
 
-# Chatterbox меню
-def chatterbox_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+
 
 # Остальные меню (если используются)
 def generation_kb():
@@ -76,19 +61,16 @@ def video_image_menu_kb():
 
 def music_menu_kb():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="MusicMax"), KeyboardButton(text="MusicGen")],
-        [KeyboardButton(text="Chatterbox")],
+        [KeyboardButton(text="MusicGen"),KeyboardButton(text="Chatterbox")],
         [main_menu_button]
     ], resize_keyboard=True)
     
+
+
 def kling_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)]
-    ], resize_keyboard=True)
-    
-def ideogram_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Новая генерация")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)],
+        ],
+        resize_keyboard=True
+    )

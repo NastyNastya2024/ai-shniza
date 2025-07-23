@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
-from keyboards import main_menu_kb, gpt_menu_kb, MAIN_MENU_BUTTON_TEXT
+from keyboards import main_menu_kb, MAIN_MENU_BUTTON_TEXT
 
 import replicate
 
@@ -32,7 +32,6 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(PromptTranslationState.WAITING_RU_PROMPT)
     await message.answer(
         "✏️ Введите текст на русском для перевода на английский:",
-        reply_markup=gpt_menu_kb()
     )
 
 # --- Главное меню ---
@@ -48,9 +47,7 @@ async def handle_russian_prompt(message: Message, state: FSMContext):
     if user_input == MAIN_MENU_BUTTON_TEXT:
         await go_main_menu(message, state)
         return
-    elif user_input == "🔁 Повторить генерацию":
-        await cmd_start(message, state)
-        return
+    
 
     await message.answer("⏳ Перевожу...")
 
@@ -70,9 +67,9 @@ async def handle_russian_prompt(message: Message, state: FSMContext):
         )
 
         translated_prompt = "".join(output).strip()
-        await message.answer("✅ Перевод:", reply_markup=gpt_menu_kb())
-        await message.answer(translated_prompt, reply_markup=gpt_menu_kb())
+        await message.answer("✅ Перевод:")
+        await message.answer(translated_prompt)
 
     except Exception as e:
         logger.exception("Ошибка при обращении к Replicate API")
-        await message.answer("❌ Произошла ошибка при переводе. Попробуйте позже.", reply_markup=gpt_menu_kb())
+        await message.answer("❌ Произошла ошибка при переводе. Попробуйте позже.")

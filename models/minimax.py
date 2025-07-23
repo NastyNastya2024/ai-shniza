@@ -3,84 +3,86 @@ import asyncio
 import logging
 import uuid
 import replicate
+
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+
 from sqlalchemy import select
-from sqlalchemy.exc import NoResultFound
 from dotenv import load_dotenv
 
 from database.db import async_session
 from database.models import User, PaymentRecord
 
-# Загрузка переменных из .env
+# Загрузка .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 if not BOT_TOKEN or not REPLICATE_API_TOKEN:
-    raise ValueError("Не заданы BOT_TOKEN или REPLICATE_API_TOKEN в .env файле")
+    raise EnvironmentError("BOT_TOKEN или REPLICATE_API_TOKEN не установлены")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("tg_bot")
 replicate.api_token = REPLICATE_API_TOKEN
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("minimax")
 
-# Стоимость генерации видео
-GENERATION_COST = 275  # в центах ($2.75)
-
-# Состояния
+# FSM состояния
 class VideoGenState(StatesGroup):
     waiting_image = State()
     waiting_prompt = State()
     confirming_payment = State()
 
-# Получение баланса пользователя
-async def get_user_balance(user_id: int) -> int:
+# Стоимость в рублях
+def calculate_minimax_price() -> float:
+    return 150.0  # рубли
+
+# Получение баланса
+async def get_user_balance(user_id: int) -> float:
     async with async_session() as session:
-        try:
-            result = await session.execute(select(User).where(User.telegram_id == user_id))
-            user = result.scalars().one()
-            return int(user.balance)
-        except NoResultFound:
-            return 0
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if not user:
+            user = User(telegram_id=user_id, balance=0)
+            session.add(user)
+            await session.commit()
+            return 0.0
+        return float(user.balance)
 
 # Списание средств
-async def deduct_user_balance(user_id: int, amount: int) -> bool:
+async def deduct_user_balance(user_id: int, amount: float) -> bool:
     async with async_session() as session:
-        try:
-            result = await session.execute(select(User).where(User.telegram_id == user_id))
-            user = result.scalars().one()
-            if user.balance >= amount:
-                user.balance -= amount
-                session.add(user)
-                session.add(PaymentRecord(
-                    user_id=user.id,
-                    amount=amount,
-                    payment_id=str(uuid.uuid4()),
-                    status="succeeded"
-                ))
-                await session.commit()
-                return True
-            return False
-        except NoResultFound:
-            return False
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user and user.balance >= amount:
+            user.balance -= amount
+            session.add(user)
+            session.add(PaymentRecord(
+                user_id=user.id,
+                amount=amount,
+                payment_id=str(uuid.uuid4()),
+                status="succeeded"
+            ))
+            await session.commit()
+            return True
+        return False
 
-# Команда /start
-async def cmd_start(message: Message, state: FSMContext):
+# /start
+async def minimax_start(message: Message, state: FSMContext):
     await state.clear()
+    price = calculate_minimax_price()
     await message.answer(
-        "🎥 Видео-бот **Minimax** превращает изображение и текст в видео.\n\n"
-        "📋 Возможности:\n- Анимация по описанию\n- Реалистичное движение\n"
-        "⚠️ Только на английском.\n💰 Стоимость: $2.75 (~275 центов)\n\n"
-        "📌 Отправьте изображение для начала."
+        f"🎥 *Minimax Video Bot* — генерация видео из картинки и текста.\n\n"
+        f"⚠️ *Только на английском языке*\n💰 Стоимость: {price:.2f} ₽\n\n"
+        f"📌 Отправьте изображение для начала.",
+        parse_mode="Markdown"
     )
     await state.set_state(VideoGenState.waiting_image)
 
-# Обработка изображения
-async def handle_image(message: Message, state: FSMContext):
+# Приём изображения
+async def minimax_handle_image(message: Message, state: FSMContext):
     if not message.photo:
         await message.answer("❌ Пожалуйста, отправьте изображение.")
         return
@@ -93,54 +95,55 @@ async def handle_image(message: Message, state: FSMContext):
     await message.answer("✏️ Теперь отправьте описание (на английском).")
     await state.set_state(VideoGenState.waiting_prompt)
 
-# Обработка промпта
-async def handle_prompt(message: Message, state: FSMContext):
+# Приём промпта и показ кнопки оплаты
+async def minimax_handle_prompt(message: Message, state: FSMContext):
     prompt = message.text.strip()
     if len(prompt) < 10:
-        await message.answer("❌ Описание слишком короткое. Минимум 10 символов.")
+        await message.answer("❌ Описание должно содержать минимум 10 символов.")
         return
 
     user_id = message.from_user.id
+    price = calculate_minimax_price()
     balance = await get_user_balance(user_id)
 
-    if balance < GENERATION_COST:
+    if balance < price:
         await message.answer(
-            f"❌ Недостаточно средств.\n💸 Стоимость генерации: {GENERATION_COST} центов\n"
-            f"💼 Ваш баланс: {balance} центов"
+            f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽"
         )
         await state.clear()
         return
 
-    await state.update_data(prompt=prompt)
+    await state.update_data(prompt=prompt, price=price)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"✅ Подтвердить списание {GENERATION_COST} центов", callback_data="confirm_generation")]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"✅ Подтвердить генерацию за {price:.2f} ₽", callback_data="confirm_generation")]
     ])
     await message.answer(
-        f"📋 Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST} центов\n💼 Ваш баланс: {balance} центов",
-        reply_markup=keyboard
+        f"📋 Подтвердите генерацию видео.\n💰 Стоимость: {price:.2f} ₽\n💼 Ваш баланс: {balance:.2f} ₽",
+        reply_markup=kb
     )
     await state.set_state(VideoGenState.confirming_payment)
 
-# Подтверждение и генерация
-async def confirm_generation(callback: CallbackQuery, state: FSMContext):
+# Подтверждение и запуск генерации
+async def minimax_confirm_generation(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     user_id = callback.from_user.id
     prompt = data.get("prompt")
     image_url = data.get("image_url")
+    price = data.get("price")
 
-    if not (prompt and image_url):
-        await callback.message.answer("❌ Данные не найдены. Начните заново: /start")
+    if not (prompt and image_url and price):
+        await callback.message.answer("❌ Недостаточно данных. Попробуйте сначала: /start")
         await state.clear()
         return
 
-    if not await deduct_user_balance(user_id, GENERATION_COST):
-        await callback.message.answer("❌ Не удалось списать средства. Попробуйте позже.")
+    if not await deduct_user_balance(user_id, price):
+        await callback.message.answer("❌ Не удалось списать средства. Проверьте баланс.")
         await state.clear()
         return
 
-    await callback.message.edit_text("🎬 Генерация видео, это может занять несколько минут...")
+    await callback.message.edit_text("⏳ Генерация видео... Это может занять до 1-2 минут.")
 
     try:
         prediction = await replicate.predictions.async_create(
@@ -151,37 +154,39 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
                 "first_frame_image": image_url,
             }
         )
-        logger.info(f"Создан prediction: {prediction.id}")
+        logger.info(f"[Minimax] Prediction ID: {prediction.id}")
 
         while prediction.status not in ("succeeded", "failed"):
-            logger.info(f"Статус: {prediction.status}")
             await asyncio.sleep(5)
             prediction = await replicate.predictions.async_get(prediction.id)
 
         if prediction.status == "succeeded":
-            output_url = prediction.output
-            if isinstance(output_url, str):
-                await callback.message.answer_video(output_url, caption="✅ Готово! Вот твое видео.")
+            video_url = prediction.output
+            if isinstance(video_url, str):
+                await callback.message.answer_video(video_url, caption="✅ Готово! Вот ваше видео.")
             else:
-                await callback.message.answer("⚠️ Видео получено, но формат неожиданный.")
+                await callback.message.answer("⚠️ Видео получено, но формат неизвестен.")
         else:
-            logger.error(f"Ошибка генерации: {prediction.error}")
-            await callback.message.answer("❌ Ошибка генерации видео.")
+            logger.error(f"[Minimax] Ошибка генерации: {prediction.error}")
+            await callback.message.answer("❌ Генерация не удалась.")
     except Exception as e:
-        logger.exception("Ошибка генерации:")
-        await callback.message.answer("⚠️ Произошла ошибка при вызове генерации.")
+        logger.exception("Ошибка при генерации:")
+        await callback.message.answer("⚠️ Ошибка генерации. Попробуйте позже.")
+
     await state.clear()
 
-# Запуск бота
+# Запуск
 async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.message.register(cmd_start, Command("start"))
-    dp.message.register(handle_image, StateFilter(VideoGenState.waiting_image))
-    dp.message.register(handle_prompt, StateFilter(VideoGenState.waiting_prompt))
-    dp.callback_query.register(confirm_generation, StateFilter(VideoGenState.confirming_payment), lambda c: c.data == "confirm_generation")
+    dp.message.register(minimax_start, Command("start"))
+    dp.message.register(minimax_handle_image, StateFilter(VideoGenState.waiting_image))
+    dp.message.register(minimax_handle_prompt, StateFilter(VideoGenState.waiting_prompt))
+    dp.callback_query.register(minimax_confirm_generation, StateFilter(VideoGenState.confirming_payment), lambda c: c.data == "confirm_generation")
 
+    logger.info("Minimax бот запущен")
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

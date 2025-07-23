@@ -10,11 +10,15 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
+from aiogram.types import Message
+
 
 from sqlalchemy import select
 from sqlalchemy.exc import NoResultFound
 from database.db import async_session
 from database.models import User, PaymentRecord
+from keyboards import main_menu_kb
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -49,6 +53,15 @@ KLING_PRICES = {
 
 def calculate_kling_price(mode: str, duration: int) -> int:
     return KLING_PRICES.get((mode, duration), 0)
+
+async def go_main_menu(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Вы в главном меню.", reply_markup=main_menu_kb())
+    
+
+async def repeat_generation_kling(message: Message, state: FSMContext):
+    await state.clear()
+    await cmd_start_kling(message, state)
 
 async def get_user_balance(user_id: int) -> int:
     async with async_session() as session:
@@ -88,14 +101,15 @@ async def cmd_start_kling(message: Message, state: FSMContext):
         "⚙️ Режимы: Standard и Pro\n"
         "⏱️ Длительность: 5 или 10 секунд\n"
         "💰 Стоимость зависит от режима и длительности.\n\n"
-        "📌 Пришли изображение, с которого начнется видео."
+        "📌 Пришли изображение, с которого начнется видео.",
     )
     await state.set_state(KlingVideoState.waiting_image)
 
 # Изображение
 async def handle_image_kling(message: Message, state: FSMContext):
     if not message.photo:
-        await message.answer("❌ Пожалуйста, отправь изображение.")
+        await message.answer("❌ Пожалуйста, отправь изображение.", reply_markup=kling_menu_kb())
+        await send_kling_footer(message)
         return
 
     photo = message.photo[-1]
@@ -139,8 +153,10 @@ async def handle_duration_selection_kling(callback: CallbackQuery, state: FSMCon
 # Prompt
 async def handle_prompt_kling(message: Message, state: FSMContext):
     prompt = message.text.strip()
+    
+    
     if len(prompt) < 15:
-        await message.answer("❌ Описание слишком короткое. Минимум 15 символов.")
+        await message.answer("❌ Описание слишком короткое. Минимум 15 символов.", reply_markup=kling_menu_kb())
         return
 
     await state.update_data(prompt=prompt)
@@ -150,7 +166,8 @@ async def handle_prompt_kling(message: Message, state: FSMContext):
 
     if balance < price:
         await message.answer(
-            f"❌ Недостаточно средств: нужно {price} центов, у вас {balance}."
+            f"❌ Недостаточно средств: нужно {price} центов, у вас {balance}.",
+            reply_markup=kling_menu_kb()
         )
         await state.clear()
         return
@@ -163,6 +180,7 @@ async def handle_prompt_kling(message: Message, state: FSMContext):
         f"💰 Стоимость генерации: {price} центов\n💼 Ваш баланс: {balance} центов\n\nНажми, чтобы подтвердить.",
         reply_markup=keyboard
     )
+    
     await state.set_state(KlingVideoState.confirm_pending)
 
 # Генерация

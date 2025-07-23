@@ -22,3 +22,10 @@ PRICE_CHATTERBOX = 14.0
 PRICE_IMAGE_GEN = 14.0 
 
 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_API_KEY = os.getenv("YOOKASSA_API_KEY")
+
+# Этот токен используется Telegram при выставлении счета через бот @YooKassaTestShopBot
+# Обрати внимание: это НЕ YOOKASSA_API_KEY, а именно Telegram-совместимый токен
+PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "424924419:TEST:your_yookassa_telegram_token")

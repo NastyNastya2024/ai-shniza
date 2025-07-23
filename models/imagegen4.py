@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import uuid
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, StateFilter
@@ -12,26 +13,60 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import replicate
 from dotenv import load_dotenv
 
+from sqlalchemy import select
+from database.db import async_session
+from database.models import User, PaymentRecord
+
 from keyboards import main_menu_kb, MAIN_MENU_BUTTON_TEXT
 
-# --- Загрузка переменных окружения ---
+# --- Init ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# --- Логирование ---
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-)
-logger = logging.getLogger("tg_bot")
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("imagegen4")
 
-# --- FSM состояния ---
+# --- FSM ---
 class ImageGenState(StatesGroup):
     AWAITING_ASPECT = State()
     AWAITING_PROMPT = State()
+    CONFIRM_GENERATION = State()
 
-# --- Клавиатура выбора соотношения ---
+# --- Pricing ---
+def calculate_imagegen4_price() -> float:
+    return 10.0
+
+# --- Balance logic ---
+async def get_user_balance(user_id: int) -> float:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if not user:
+            user = User(telegram_id=user_id, balance=0)
+            session.add(user)
+            await session.commit()
+            return 0.0
+        return float(user.balance)
+
+async def deduct_user_balance(user_id: int, amount: float) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalars().first()
+        if user and user.balance >= amount:
+            user.balance -= amount
+            session.add(user)
+            session.add(PaymentRecord(
+                user_id=user.id,
+                amount=amount,
+                payment_id=str(uuid.uuid4()),
+                status="succeeded"
+            ))
+            await session.commit()
+            return True
+        return False
+
+# --- Keyboards ---
 def aspect_ratio_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -41,79 +76,74 @@ def aspect_ratio_kb():
         ]
     ])
 
-# --- Клавиатура повтор/меню ---
-def imagegen_menu_kb():
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔁 Повторить генерацию")],
-        [KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)]
-    ], resize_keyboard=True)
-
-# --- /start ---
-async def cmd_start(message: Message, state: FSMContext):
+# --- Handlers ---
+async def cmd_start_imagegen4(message: Message, state: FSMContext):
     await state.clear()
-    logger.info(f"[cmd_start] Пользователь {message.from_user.id} вызвал /start")
-
-    welcome_text = (
-        "🖼 Google Imagen 4 — генерация изображений по текстовому описанию на английском языке.\n\n"
-        "⚠️ *Важно:*\n"
-        "- Промпт (описание) — только на английском языке\n"
-        "- Минимум 15 символов\n"
-        "- 💰 Стоимость: бесплатно\n\n"
-        "⬇️ Выберите соотношение сторон:"
+    await message.answer(
+        "🖼 Google Imagen 4 — генерация изображений по тексту на английском языке.\n\n"
+        f"⚠️ Минимум 15 символов.\n💰 Стоимость: {calculate_imagegen4_price():.2f} ₽\n\n"
+        "⬇️ Выберите соотношение сторон:",
+        parse_mode="Markdown",
+        reply_markup=aspect_ratio_kb()
     )
-
-    await message.answer(welcome_text, parse_mode="Markdown", reply_markup=aspect_ratio_kb())
     await state.set_state(ImageGenState.AWAITING_ASPECT)
 
-# --- Главное меню ---
-async def go_main_menu(message: Message, state: FSMContext):
+async def go_main_menu_imagegen4(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
 
-# --- Обработка выбора соотношения сторон ---
 async def aspect_imagegen4(callback: CallbackQuery, state: FSMContext):
     aspect_value = callback.data.split("_")[1]
     await state.update_data(aspect_ratio=aspect_value)
-    logger.info(f"[aspect_imagegen4] Пользователь {callback.from_user.id} выбрал аспект {aspect_value}")
-
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("Отправьте описание (промпт) на английском языке (минимум 15 символов):", reply_markup=imagegen_menu_kb())
+    await callback.message.edit_reply_markup()
+    await callback.message.answer("✏️ Введите промпт (на английском, минимум 15 символов):")
     await state.set_state(ImageGenState.AWAITING_PROMPT)
     await callback.answer()
 
-# --- Обработка промпта ---
-async def handle_prompt(message: Message, state: FSMContext):
+async def handle_prompt_imagegen4(message: Message, state: FSMContext):
     text = message.text.strip()
-
-    if text == "🔁 Повторить генерацию":
-        await cmd_start(message, state)
-        return
-
-    if text == MAIN_MENU_BUTTON_TEXT:
-        await go_main_menu(message, state)
-        return
-
     user_id = message.from_user.id
-    logger.info(f"[handle_prompt] Промпт от {user_id}: {text}")
 
     if len(text) < 15:
-        await message.answer("❌ Описание должно быть не короче 15 символов.", reply_markup=imagegen_menu_kb())
+        await message.answer("❌ Описание должно быть не короче 15 символов.")
         return
 
-    await message.answer("⏳ Генерация изображения...", reply_markup=imagegen_menu_kb())
+    price = calculate_imagegen4_price()
+    balance = await get_user_balance(user_id)
 
+    if balance < price:
+        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\nБаланс: {balance:.2f} ₽")
+        await state.clear()
+        return
+
+    await state.update_data(prompt=text, price=price)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_generation_imagegen4")]
+    ])
+    await message.answer(
+        f"💰 Стоимость: {price:.2f} ₽\nБаланс: {balance:.2f} ₽\nПодтвердите генерацию:",
+        reply_markup=kb
+    )
+    await state.set_state(ImageGenState.CONFIRM_GENERATION)
+
+async def confirm_generation_imagegen4(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    aspect_ratio = data.get("aspect_ratio", "9:16")
+    user_id = callback.from_user.id
+
+    if not await deduct_user_balance(user_id, data["price"]):
+        await callback.message.edit_text("❌ Не удалось списать средства.")
+        await state.clear()
+        return
+
+    await callback.message.edit_text("⏳ Генерация изображения...")
 
     try:
         replicate.api_token = REPLICATE_API_TOKEN
-
         prediction = await replicate.predictions.async_create(
             model="google/imagen-4",
             input={
-                "prompt": text,
-                "aspect_ratio": aspect_ratio,
+                "prompt": data["prompt"],
+                "aspect_ratio": data.get("aspect_ratio", "9:16"),
                 "output_format": "png",
                 "safety_filter_level": "block_medium_and_above",
                 "guidance_scale": 7.5,
@@ -124,42 +154,32 @@ async def handle_prompt(message: Message, state: FSMContext):
         while prediction.status not in ("succeeded", "failed", "canceled"):
             await asyncio.sleep(2)
             prediction = await replicate.predictions.async_get(prediction.id)
-            logger.debug(f"[handle_prompt] Ожидание... статус: {prediction.status}")
 
-        if prediction.status == "failed":
+        if prediction.status != "succeeded" or not prediction.output:
             raise RuntimeError("Генерация не удалась.")
 
-        output = prediction.output
-        if isinstance(output, list) and output:
-            image_url = output[0]
-        elif isinstance(output, str):
-            image_url = output
-        else:
-            raise ValueError("Некорректный формат output")
-
-        logger.info(f"[handle_prompt] Успешно: {image_url}")
-        await message.answer_photo(image_url, caption=f"✅ Ваше изображение:\n{text}", reply_markup=imagegen_menu_kb())
+        image_url = prediction.output[0] if isinstance(prediction.output, list) else prediction.output
+        await callback.message.answer_photo(image_url, caption=f"✅ Prompt: {data['prompt']}")
 
     except Exception as e:
-        logger.exception(f"[handle_prompt] Ошибка генерации: {e}")
-        await message.answer("❌ Произошла ошибка при генерации. Попробуйте позже.", reply_markup=imagegen_menu_kb())
+        logger.exception("Ошибка генерации изображения")
+        await callback.message.answer("❌ Произошла ошибка при генерации.")
 
     await state.clear()
 
-# --- Основной запуск ---
+# --- Main ---
 async def main():
-    logger.info("Запуск Telegram-бота...")
-
     if not BOT_TOKEN or not REPLICATE_API_TOKEN:
         raise EnvironmentError("BOT_TOKEN или REPLICATE_API_TOKEN не установлены в .env")
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.message.register(cmd_start, Command("start"))
+    dp.message.register(cmd_start_imagegen4, Command("start"))
     dp.callback_query.register(aspect_imagegen4, F.data.startswith("aspect_"), StateFilter(ImageGenState.AWAITING_ASPECT))
-    dp.message.register(handle_prompt, StateFilter(ImageGenState.AWAITING_PROMPT))
-    dp.message.register(go_main_menu, F.text == MAIN_MENU_BUTTON_TEXT)
+    dp.message.register(handle_prompt_imagegen4, StateFilter(ImageGenState.AWAITING_PROMPT))
+    dp.callback_query.register(confirm_generation_imagegen4, F.data == "confirm_generation_imagegen4", StateFilter(ImageGenState.CONFIRM_GENERATION))
+    dp.message.register(go_main_menu_imagegen4, F.text == MAIN_MENU_BUTTON_TEXT)
 
     await dp.start_polling(bot)
 
