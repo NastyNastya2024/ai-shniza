@@ -92,9 +92,9 @@ async def deduct_user_balance(user_id: int, amount: float) -> bool:
 # /start
 async def cmd_start_chatterbox(message: Message, state: FSMContext):
     await message.answer(
-        "🧐 Ты выбрал модель **Chatterbox**...",
-        "🧐 Ты выбрал модель **Chatterbox**...",
-        "🧐 Ты выбрал модель **Chatterbox**...",
+        "🗣️ Voice Generator Bot на базе нейросети **Chatterbox** — генерация выразительной и естественной речи по тексту.\n\n"
+        "⚠️ Важно:текст — на английском языке\n"
+        f"💰 Стоимость: {calculate_chatterbox_price():.2f} ₽ за генерацию",
         reply_markup=temperature_keyboard(),
         parse_mode="Markdown"
     )
@@ -132,7 +132,7 @@ async def handle_voice_text_chatterbox(message: Message, state: FSMContext):
     balance = await get_user_balance(message.from_user.id)
 
     if balance < price:
-        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\n💼 Ваш баланс: {balance:.2f} ₽.\n Пополнить кошелек можно в разделе баланс")
+        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\n 💼 Ваш баланс: {balance:.2f} ₽.\n Пополнить кошелек можно в разделе Баланс")
         await state.clear()
         return
 
@@ -159,7 +159,7 @@ async def confirm_generation_chatterbox(callback: CallbackQuery, state: FSMConte
         await state.clear()
         return
 
-    await callback.message.edit_text("🎤 Генерация озвучки...")
+    await callback.message.edit_text("🎤 Генерация озвучки - это может занять несколько минут...")
 
     try:
         replicate.api_token = REPLICATE_API_TOKEN

@@ -35,7 +35,7 @@ class IdeogramImageGenState(StatesGroup):
 
 # --- Стоимость генерации ---
 def calculate_ideogram_price() -> float:
-    return 10.0
+    return 9.0
 
 # --- Работа с балансом ---
 async def get_user_balance(user_id: int) -> float:
@@ -93,10 +93,13 @@ def style_type_kb():
 # --- Старт ---
 async def ideogram_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(
-        f"🖼 Ideogram V2 Turbo\n\nСтоимость генерации: {calculate_ideogram_price():.2f} ₽",
-        parse_mode="Markdown"
+
+    description = (
+        "🖼️ Image Generation Bot на базе нейросети **Ideogram V2 Turbo** — быстрый и мощный генератор изображений с поддержкой современного **инпейнтинга**, точного понимания промптов и качественной генерации текста на изображениях.\n\n"
+        "⚠️ Важно:промпт — на английском языке\n"
+        f"💰 Стоимость: {calculate_ideogram_price():.2f} ₽ за генерацию"
     )
+    await message.answer(description, parse_mode="Markdown")
     await state.set_state(IdeogramImageGenState.SELECTING_ASPECT)
     await message.answer("⬇️ Выбери соотношение сторон:", reply_markup=aspect_ratio_kb())
 
@@ -132,7 +135,7 @@ async def handle_prompt_aspect_ideogram(message: Message, state: FSMContext):
     balance = await get_user_balance(message.from_user.id)
 
     if balance < price:
-        await message.answer(f"❌ Недостаточно средств. Стоимость: {price:.2f} ₽ | Баланс: {balance:.2f} ₽")
+        await message.answer(f"❌ Недостаточно средств. Стоимость: {price:.2f} ₽ | Баланс: {balance:.2f} ₽. 💼 Для пополнения перейдите в раздел «Баланс».")
         await state.clear()
         return
 
@@ -140,7 +143,7 @@ async def handle_prompt_aspect_ideogram(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_generation_ideogram")]
     ])
-    await message.answer(f"💰 Стоимость: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽\nПодтвердите генерацию:", reply_markup=kb)
+    await message.answer(f"💰 Стоимость: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽\n Подтвердите генерацию:", reply_markup=kb)
     await state.set_state(IdeogramImageGenState.CONFIRM_GENERATION_IDEOGRAM)
 
 async def confirm_generation_ideogram(callback: CallbackQuery, state: FSMContext):
@@ -153,7 +156,7 @@ async def confirm_generation_ideogram(callback: CallbackQuery, state: FSMContext
         await state.clear()
         return
 
-    await callback.message.edit_text("⏳ Генерация изображения...")
+    await callback.message.edit_text("🎥 Генерация изображения... Это может занять пару минут.")
 
     try:
         replicate.api_token = REPLICATE_API_TOKEN

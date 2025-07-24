@@ -166,7 +166,7 @@ async def handle_prompt_kling(message: Message, state: FSMContext):
 
     if balance < price:
         await message.answer(
-            f"❌ Недостаточно средств: нужно {price} центов, у вас {balance}.",
+            f"❌ Недостаточно средств: нужно {price} центов, у вас {balance} 💼 Для пополнения перейдите в раздел «Баланс».",
             reply_markup=kling_menu_kb()
         )
         await state.clear()
@@ -177,7 +177,7 @@ async def handle_prompt_kling(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_gen")]
     ])
     await message.answer(
-        f"💰 Стоимость генерации: {price} центов\n💼 Ваш баланс: {balance} центов\n\nНажми, чтобы подтвердить.",
+        f"💰 Стоимость генерации: {price} центов\n💼 Ваш баланс: {balance} центов\n Нажми, чтобы подтвердить.",
         reply_markup=keyboard
     )
     

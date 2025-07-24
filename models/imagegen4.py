@@ -112,7 +112,7 @@ async def handle_prompt_imagegen4(message: Message, state: FSMContext):
     balance = await get_user_balance(user_id)
 
     if balance < price:
-        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\nБаланс: {balance:.2f} ₽")
+        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\nБаланс: {balance:.2f} ₽. 💼 Для пополнения перейдите в раздел «Баланс».")
         await state.clear()
         return
 
@@ -135,7 +135,7 @@ async def confirm_generation_imagegen4(callback: CallbackQuery, state: FSMContex
         await state.clear()
         return
 
-    await callback.message.edit_text("⏳ Генерация изображения...")
+    await callback.message.edit_text("🎥 Генерация изображения... Это может занять пару минут.")
 
     try:
         replicate.api_token = REPLICATE_API_TOKEN

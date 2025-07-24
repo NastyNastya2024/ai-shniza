@@ -38,7 +38,7 @@ class FluxKontextState(StatesGroup):
     CONFIRM_GENERATION_FLUX = State()
 
 def calculate_flux_price() -> float:
-    return 10.0
+    return 9.0
 
 async def get_user_balance(user_id: int) -> float:
     async with async_session() as session:
@@ -71,14 +71,9 @@ async def deduct_user_balance(user_id: int, amount: float) -> bool:
 async def cmd_start_flux(message: Message, state: FSMContext):
     await state.clear()
     description = (
-        "🎨 *Cartoon Video Bot* на базе нейросети **Flux Kontext** — генерация мультфильмов из изображений и текста.\n\n"
-        "📋 *Что умеет:*\n"
-        "- Мультяшные стили (Pixar, Anime, Disney и др.)\n"
-        "- Камера, движение, сюжет\n"
-        "- Фоны и визуальные эффекты\n\n"
-        "⚠️ *Важно:*\n"
-        "- Промпт (описание) — на английском\n"
-        f"- 💰 Стоимость: {calculate_flux_price():.2f} ₽ за генерацию"
+        "🎨 *Cartoon Video Bot* на базе нейросети **Flux Kontext** — генерация мультфильмов из изображений (Pixar, Anime, Disney и др.) и текста.\n"
+        "⚠️ *Важно: промпт (описание) — на английском\n"
+        f"💰 Стоимость: {calculate_flux_price():.2f} ₽ за генерацию"
     )
     await message.answer(description, parse_mode="Markdown")
     await message.answer("📌 Пришли изображение, с которым хочешь работать.")
@@ -144,7 +139,7 @@ async def handle_prompt_flux(message: Message, state: FSMContext):
     balance = await get_user_balance(message.from_user.id)
 
     if balance < price:
-        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\n💼 Ваш баланс: {balance:.2f} ₽")
+        await message.answer(f"❌ Недостаточно средств.\n💰 Стоимость: {price:.2f} ₽\n💼 Ваш баланс: {balance:.2f} ₽. 💼 Для пополнения перейдите в раздел «Баланс».")
         await state.clear()
         return
 
@@ -152,7 +147,7 @@ async def handle_prompt_flux(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить генерацию", callback_data="confirm_generation_flux")]
     ])
-    await message.answer(f"💰 Стоимость генерации: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽\n\nПодтвердите генерацию:", reply_markup=kb)
+    await message.answer(f"💰 Стоимость генерации: {price:.2f} ₽\nВаш баланс: {balance:.2f} ₽. 💼 Для пополнения перейдите в раздел «Баланс». \n\nПодтвердите генерацию:", reply_markup=kb)
     await state.set_state(FluxKontextState.CONFIRM_GENERATION_FLUX)
 
 async def confirm_generation_flux(callback: CallbackQuery, state: FSMContext):

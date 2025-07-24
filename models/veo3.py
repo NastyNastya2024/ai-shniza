@@ -96,8 +96,8 @@ async def handle_prompt_veo3(message: Message, state: FSMContext):
 
     if balance < GENERATION_COST_RUB:
         await message.answer(
-            f"❌ Недостаточно средств.\n💸 Стоимость генерации: {GENERATION_COST_RUB}₽\n"
-            f"💼 Ваш баланс: {balance}₽"
+            f"❌ Недостаточно средств.\n💸 Стоимость генерации: {GENERATION_COST_RUB}₽. \n"
+            f"💼 Ваш баланс: {balance}₽. \n 💼 Для пополнения перейдите в раздел «Баланс»."
         )
         await state.clear()
         return
