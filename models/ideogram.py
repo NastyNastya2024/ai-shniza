@@ -96,9 +96,9 @@ async def ideogram_start(message: Message, state: FSMContext):
 
     description = (
         "🖼️ Image Generation Bot на базе нейросети **Ideogram V2 Turbo** — быстрый и мощный генератор изображений с поддержкой современного инпейнтинга.\n\n"
-        "⚠️ Важно:промпт — на английском языке\n"
+        "⚠️ Prompt — на английском языке\n"
+        f"💰 Стоимость: {calculate_ideogram_price():.2f} ₽ за генерацию \n"
         "🔤 Нажмите /main чтобы выйти"
-        f"💰 Стоимость: {calculate_ideogram_price():.2f} ₽ за генерацию",
     )
     await message.answer(description, parse_mode="Markdown")
     await state.set_state(IdeogramImageGenState.SELECTING_ASPECT)

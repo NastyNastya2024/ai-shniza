@@ -58,7 +58,7 @@ def confirm_keyboard():
 
 # Цена в рублях (float)
 def calculate_chatterbox_price() -> float:
-    return 10.0
+    return 9.0
 
 # Баланс
 async def get_user_balance(user_id: int) -> float:
