@@ -94,6 +94,7 @@ async def cmd_start_chatterbox(message: Message, state: FSMContext):
     await message.answer(
         "🗣️ Voice Generator Bot на базе нейросети **Chatterbox** — генерация выразительной и естественной речи по тексту.\n\n"
         "⚠️ Важно:текст — на английском языке\n"
+        "🔤 Нажмите /main чтобы выйти\n"
         f"💰 Стоимость: {calculate_chatterbox_price():.2f} ₽ за генерацию",
         reply_markup=temperature_keyboard(),
         parse_mode="Markdown"

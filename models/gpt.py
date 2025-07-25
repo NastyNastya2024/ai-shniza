@@ -31,7 +31,9 @@ class PromptTranslationState(StatesGroup):
 async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(PromptTranslationState.WAITING_RU_PROMPT)
     await message.answer(
-        "✏️ Введите текст на русском для перевода на английский:",
+        "✏️ Введите текст на русском для перевода на английский:\n\n"
+        "💼 Перевод бесплатный:\n"
+        "🔤 Нажмите /main чтобы выйти",
     )
 
 # --- Главное меню ---

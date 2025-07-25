@@ -71,8 +71,9 @@ async def deduct_user_balance(user_id: int, amount: float) -> bool:
 async def cmd_start_flux(message: Message, state: FSMContext):
     await state.clear()
     description = (
-        "🎨 *Cartoon Video Bot* на базе нейросети **Flux Kontext** — генерация мультфильмов из изображений (Pixar, Anime, Disney и др.) и текста.\n"
-        "⚠️ *Важно: промпт (описание) — на английском\n"
+        "🎨 Cartoon Video Bot на базе нейросети **Flux Kontext** — генерация мультфильмов из изображений и текста.(Pixar, Anime, Disney и др.)\n\n"
+        "⚠️ Важно: промпт — на английском\n"
+        "🔤 Нажмите /main чтобы выйти\n"
         f"💰 Стоимость: {calculate_flux_price():.2f} ₽ за генерацию"
     )
     await message.answer(description, parse_mode="Markdown")

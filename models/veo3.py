@@ -38,7 +38,7 @@ class Veo3State(StatesGroup):
     processing = State()
 
 # Стоимость генерации видео (в рублях)
-GENERATION_COST_RUB = 600
+GENERATION_COST_RUB = 660
 
 # Получение баланса пользователя
 async def get_user_balance(user_id: int) -> int:
@@ -75,12 +75,13 @@ async def deduct_user_balance(user_id: int, amount: int) -> bool:
 async def cmd_start_veo3(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "Модель Veo3 генерирует видео с звуком по описанию.\n"
-        "💡 Описание (prompt) — на английском.\n"
+        "Veo3 генерирует видео со звуком.\n"
         "🛠️ Разрешение видео 16:9.\n"
-        "🛠️ Звук соответствует описанию.\n"
-        f"💲 Себестоимость: {GENERATION_COST_RUB}₽.\n"
-        "Отправьте описание сцены."
+        "🛠️ Звук соответствует описанию.\n\n"
+        "⚠️ Prompt на английском языке.\n"
+        f"💰 Себестоимость: {GENERATION_COST_RUB}₽.\n"
+        "🔤 Нажмите /main чтобы выйти\n\n"
+        "📌 Отправьте описание сцены."
     )
     await state.set_state(Veo3State.waiting_for_prompt)
 
@@ -108,7 +109,7 @@ async def handle_prompt_veo3(message: Message, state: FSMContext):
         [InlineKeyboardButton(text=f"✅ Подтвердить списание {GENERATION_COST_RUB}₽", callback_data="confirm_generation_veo3")]
     ])
     await message.answer(
-        f"📋 Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST_RUB}₽\n💼 Ваш баланс: {balance}₽",
+        f"Подтвердите генерацию видео.\n💸 Стоимость: {GENERATION_COST_RUB}₽\n💼 Ваш баланс: {balance}₽",
         reply_markup=keyboard
     )
     await state.set_state(Veo3State.confirming_payment)

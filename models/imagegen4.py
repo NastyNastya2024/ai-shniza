@@ -35,7 +35,7 @@ class ImageGenState(StatesGroup):
 
 # --- Pricing ---
 def calculate_imagegen4_price() -> float:
-    return 10.0
+    return 9.0
 
 # --- Balance logic ---
 async def get_user_balance(user_id: int) -> float:
@@ -80,8 +80,8 @@ def aspect_ratio_kb():
 async def cmd_start_imagegen4(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "🖼 Google Imagen 4 — генерация изображений по тексту на английском языке.\n\n"
-        f"⚠️ Минимум 15 символов.\n💰 Стоимость: {calculate_imagegen4_price():.2f} ₽\n\n"
+        "🖼 Google Imagen 4 — генерация изображений по тексту.\n\n"
+        f"⚠️ Prompt на английском языке.\n💰 Стоимость: {calculate_imagegen4_price():.2f} ₽.\n 🔤 Нажмите /main чтобы выйти \n\n"
         "⬇️ Выберите соотношение сторон:",
         parse_mode="Markdown",
         reply_markup=aspect_ratio_kb()
