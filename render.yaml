@@ -1,10 +1,12 @@
 services:
   - type: web
     name: ai-shniza
-    env: python
     build:
       pythonVersion: 3.11.8
-    startCommand: python main.py
+      buildCommand: poetry install
+    startCommand: poetry run python main.py
     envVars:
       - key: ENV
         value: production
+      - key: PYTHON_VERSION
+        value: 3.11
