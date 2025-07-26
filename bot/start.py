@@ -80,12 +80,14 @@ async def handle_fixed_payment(callback: CallbackQuery):
 
 @router.message()
 async def handle_custom_amount_input(message: Message):
-    try:
-        amount = int(message.text.strip())
-        if amount < 100:
-            await message.answer("❗ Минимальная сумма пополнения — 100 ₽. Пожалуйста, введите сумму заново.")
-            return
 
+
+    amount = int(message.text.strip())
+    if amount < 100:
+        await message.answer("❗ Минимальная сумма пополнения — 100 ₽. Пожалуйста, введите сумму заново.")
+        return
+
+    try:
         invoice = create_invoice(
             chat_id=message.chat.id,
             amount=amount * 100,
@@ -98,8 +100,6 @@ async def handle_custom_amount_input(message: Message):
 
         await message.bot.send_invoice(**invoice)
 
-    except ValueError:
-        await message.answer("❗ Пожалуйста, введите числовое значение (целое число).")
     except Exception as e:
         logging.exception("Ошибка при создании инвойса (custom)")
         await message.answer("🚫 Ошибка при создании счёта. Попробуйте позже.")

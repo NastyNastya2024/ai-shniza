@@ -10,9 +10,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
+from models.gpt import PromptTranslationState, gpt_start, handle_russian_prompt
 from bot.start import show_payment_options, router as start_router
 from models.kling import KlingVideoState, cmd_start_kling, handle_image_kling, handle_mode_selection_kling, handle_duration_selection_kling, handle_prompt_kling, handle_confirm_generation_kling
-from models.gpt import PromptTranslationState, cmd_start as gpt_start, handle_russian_prompt
 from models import ideogram, imagegen4, flux, veo3, kling, minimax, seedance, musicgen, chatterbox, gpt
 from models.minimax import VideoGenState, minimax_start, minimax_handle_image, minimax_handle_prompt,  minimax_confirm_generation
 from models.veo3 import (
@@ -161,97 +161,92 @@ async def cmd_start(message: Message, state: FSMContext):
 
         f"💼 *Юридическая информация:*\n"
         f"ИП А А Комарова\n"
-        f"ИНН 504231947047 |\n ОГРН 322508100272216\n\n"
+        f"ИНН 504231947047 | \n ОГРН 322508100272216\n\n"
         f"❗ Ознакомьтесь с тарифами и офертой через кнопку 📊 *Баланс*",
         parse_mode="Markdown"
     )
 
     # 👇 добавлено: сразу переход в главное меню
-    await to_main_menu(message, state)
+    await go_main_menu(message, state) 
 
-@router.message(F.text == "Главное меню")
-async def to_main_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "main_menu")
+async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await message.answer("Вы в главном меню", reply_markup=main_menu_kb())
-    
-@router.message(Command("main"))
-async def cmd_main_alias(message: Message, state: FSMContext):
-    await to_main_menu(message, state)
-    
-@router.message(F.text == "📊 Баланс")
-async def show_balance_options(message: Message, state: FSMContext):
-    await show_payment_options(message)
+    await callback.message.edit_text("Вы в главном меню", reply_markup=main_menu_kb())
 
-@router.message(F.text == "🎨 Генерация")
-async def generation_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "balance")
+async def cb_balance(callback: CallbackQuery, state: FSMContext):
+    await show_payment_options(callback.message)
+
+@router.callback_query(F.data == "generate")
+async def cb_generate(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.generation)
-    await message.answer("Что вы хотите сгенерировать?", reply_markup=generation_kb())
+    await callback.message.edit_text("Что вы хотите сгенерировать?", reply_markup=generation_kb())
 
-@router.message(F.text == "🖼 Картинка")
-async def image_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "image_menu")
+async def cb_image_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.image_menu)
-    await message.answer("Выберите тип генерации картинки:", reply_markup=image_menu_kb())
+    await callback.message.edit_text("Выберите тип генерации картинки:", reply_markup=image_menu_kb())
 
-@router.message(F.text == "🖋 Картинка из текста")
-async def image_text_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "image_from_text")
+async def cb_image_from_text(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.image_text_menu)
-    await message.answer("Выберите модель:", reply_markup=image_text_menu_kb())
+    await callback.message.edit_text("Выберите модель:", reply_markup=image_text_menu_kb())
 
-@router.message(F.text == "Ideogram.py")
-async def run_ideogram_menu(message: Message, state: FSMContext):
-    await ideogram.cmd_start(message, state)
+@router.callback_query(F.data == "image_from_image")
+async def cb_image_from_image(callback: CallbackQuery, state: FSMContext):
+    await cmd_start_flux(callback.message, state)
 
-@router.message(F.text == "Imagegen4.py")
-async def run_imagegen4(message: Message, state: FSMContext):
-    await imagegen4.cmd_start_imagegen4(message, state)
+@router.callback_query(F.data == "ideogram")
+async def cb_ideogram(callback: CallbackQuery, state: FSMContext):
+    await ideogram_start(callback.message, state)
 
-@router.message(F.text == "🖼 Картинка из картинки")
-async def run_flux(message: Message, state: FSMContext):
-    await flux.cmd_start_flux(message, state)
+@router.callback_query(F.data == "imagegen4")
+async def cb_imagegen4(callback: CallbackQuery, state: FSMContext):
+    await cmd_start_imagegen4(callback.message, state)
 
-@router.message(F.text == "🎬 Видео")
-async def video_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "video_menu")
+async def cb_video_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.video_menu)
-    await message.answer("Выберите тип видео:", reply_markup=video_menu_kb())
+    await callback.message.edit_text("Выберите тип видео:", reply_markup=video_menu_kb())
 
-@router.message(F.text == "📄 Видео из текста")
-async def run_veo3(message: Message, state: FSMContext):
-    await veo3.cmd_start_veo3(message, state)
+@router.callback_query(F.data == "video_from_text")
+async def cb_video_from_text(callback: CallbackQuery, state: FSMContext):
+    await cmd_start_veo3(callback.message, state)
 
-@router.message(F.text == "🖼 Видео из картинки")
-async def video_img_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "video_from_image")
+async def cb_video_from_image(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.video_image_menu)
-    await message.answer("Выберите модель:", reply_markup=video_image_menu_kb())
+    await callback.message.edit_text("Выберите модель:", reply_markup=video_image_menu_kb())
 
-@router.message(F.text == "Kling")
-async def run_kling(message: Message, state: FSMContext):
-    await kling.cmd_start_kling(message, state)
+@router.callback_query(F.data == "kling")
+async def cb_kling(callback: CallbackQuery, state: FSMContext):
+    await cmd_start_kling(callback.message, state)
 
-@router.message(F.text == "Minimax")
-async def run_minimax(message: Message, state: FSMContext):
-    await minimax.minimax_start(message, state)
+@router.callback_query(F.data == "minimax")
+async def cb_minimax(callback: CallbackQuery, state: FSMContext):
+    await minimax_start(callback.message, state)
 
-@router.message(F.text == "Seedance")
-async def run_seedance(message: Message, state: FSMContext):
-    await seedance.seedance_cmd_start(message, state)
+@router.callback_query(F.data == "seedance")
+async def cb_seedance(callback: CallbackQuery, state: FSMContext):
+    await seedance_cmd_start(callback.message, state)
 
-@router.message(F.text == "🎵 Музыка")
-async def music_menu(message: Message, state: FSMContext):
+@router.callback_query(F.data == "music_menu")
+async def cb_music_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MenuState.music_menu)
-    await message.answer("Выберите модель:", reply_markup=music_menu_kb())
+    await callback.message.edit_text("Выберите модель:", reply_markup=music_menu_kb())
 
+@router.callback_query(F.data == "musicgen")
+async def cb_musicgen(callback: CallbackQuery, state: FSMContext):
+    await start_handler_musicgen(callback.message, state)
 
-@router.message(F.text == "MusicGen")
-async def run_musicgen(message: Message, state: FSMContext):
-    await musicgen.start_handler_musicgen(message, state)
+@router.callback_query(F.data == "chatterbox")
+async def cb_chatterbox(callback: CallbackQuery, state: FSMContext):
+    await cmd_start_chatterbox(callback.message, state)
 
-@router.message(F.text == "Chatterbox")
-async def run_chatterbox(message: Message, state: FSMContext):
-    await chatterbox.сmd_start_chatterbox(message, state)
-
-@router.message(F.text == "🔤 Перевод")
-async def translate_dummy(message: Message):
-    await message.answer("Пример перевода: Hello → Привет")
+@router.callback_query(F.data == "translate")
+async def cb_translate(callback: CallbackQuery, state: FSMContext):
+    await gpt_start(callback.message, state)
 
 
 

@@ -1,4 +1,7 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
 
 # Универсальный текст кнопки
 MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
@@ -8,69 +11,62 @@ main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 
 # Главное меню
 def main_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🎨 Генерация")],
-        [KeyboardButton(text="🔤 Перевод")],
-        [KeyboardButton(text="📊 Баланс")]
-    ], resize_keyboard=True)
-    
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎨 Генерация", callback_data="generate")],
+        [InlineKeyboardButton(text="🔤 Перевод", callback_data="translate")],
+        [InlineKeyboardButton(text="📊 Баланс", callback_data="balance")]
+    ])
 
-    
-# Универсальная клавиатура "Назад"
-def universal_back_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [main_menu_button]
-    ], resize_keyboard=True)
-
-
-
-# Остальные меню (если используются)
+# Меню "Генерация"
 def generation_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🖼 Картинка"), KeyboardButton(text="🎬 Видео")],
-        [KeyboardButton(text="🎵 Музыка")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖼 Картинка", callback_data="image_menu"),
+         InlineKeyboardButton(text="🎬 Видео", callback_data="video_menu")],
+        [InlineKeyboardButton(text="🎵 Музыка", callback_data="music_menu")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
+# Меню "Картинка"
 def image_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🖋 Картинка из текста")],
-        [KeyboardButton(text="🖼 Картинка из картинки")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖋 Картинка из текста", callback_data="image_from_text")],
+        [InlineKeyboardButton(text="🖼 Картинка из картинки", callback_data="image_from_image")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
 def image_text_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Ideogram.py"), KeyboardButton(text="Imagegen4.py")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Ideogram.py", callback_data="ideogram")],
+        [InlineKeyboardButton(text="Imagegen4.py", callback_data="imagegen4")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
+# Меню "Видео"
 def video_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="📄 Видео из текста")],
-        [KeyboardButton(text="🖼 Видео из картинки")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Видео из текста", callback_data="video_from_text")],
+        [InlineKeyboardButton(text="🖼 Видео из картинки", callback_data="video_from_image")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
 def video_image_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Kling"), KeyboardButton(text="Minimax")],
-        [KeyboardButton(text="Seedance")],
-        [main_menu_button]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Kling", callback_data="kling"),
+         InlineKeyboardButton(text="Minimax", callback_data="minimax")],
+        [InlineKeyboardButton(text="Seedance", callback_data="seedance")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
+# Меню "Музыка"
 def music_menu_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="MusicGen"),KeyboardButton(text="Chatterbox")],
-        [main_menu_button]
-    ], resize_keyboard=True)
-    
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="MusicGen", callback_data="musicgen"),
+         InlineKeyboardButton(text="Chatterbox", callback_data="chatterbox")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
 
-
+# Kling submenu (если потребуется)
 def kling_menu_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)],
-        ],
-        resize_keyboard=True
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])

@@ -28,7 +28,7 @@ class PromptTranslationState(StatesGroup):
     WAITING_RU_PROMPT = State()
 
 # --- Команда /start ---
-async def cmd_start(message: Message, state: FSMContext):
+async def gpt_start(message: Message, state: FSMContext):
     await state.set_state(PromptTranslationState.WAITING_RU_PROMPT)
     await message.answer(
         "✏️ Введите текст на русском для перевода на английский:\n\n"
