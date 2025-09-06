@@ -85,6 +85,7 @@ def main_menu_kb():
         [KeyboardButton(text="📊 Баланс")]
     ], resize_keyboard=True)
 
+
 def generation_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🖼 Картинка"), KeyboardButton(text="🎬 Видео")],
@@ -92,12 +93,14 @@ def generation_kb():
         [KeyboardButton(text="Главное меню")]
     ], resize_keyboard=True)
 
+
 def image_menu_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🖋 Картинка из текста")],
         [KeyboardButton(text="🖼 Картинка из картинки")],
         [KeyboardButton(text="Главное меню")]
     ], resize_keyboard=True)
+
 
 def image_text_menu_kb():
     return ReplyKeyboardMarkup(keyboard=[
@@ -296,7 +299,8 @@ async def main():
         StateFilter(chatterbox.VoiceGenState.AWAITING_TEXT)
     )
     
-        # ✅ Регистрация хендлеров Minimax FSM
+    
+    # ✅ Регистрация хендлеров Minimax FSM
     dp.message.register(
         minimax_start,
         F.text == "Minimax"
@@ -317,7 +321,7 @@ async def main():
     
         
     
-        # ✅ Регистрация хендлеров Seedance FSM
+    # ✅ Регистрация хендлеров Seedance FSM
     dp.message.register(
         seedance_start,
         F.text == "Seedance"

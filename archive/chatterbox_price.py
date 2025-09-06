@@ -14,6 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
+
 from bot.payments import has_enough_balance, deduct_balance
 from bot.config import PRICE_CHATTERBOX
 
